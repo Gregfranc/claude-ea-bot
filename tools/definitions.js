@@ -318,6 +318,56 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "upload_to_drive",
+    description:
+      "Upload a file to Google Drive. Creates a new file or updates an existing one with the same name in the specified folder.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_name: { type: "string", description: "Name for the file in Drive" },
+        content: { type: "string", description: "File content to upload" },
+        mime_type: { type: "string", description: 'MIME type (default "text/markdown")' },
+        folder_id: { type: "string", description: "Google Drive folder ID to upload into (optional)" },
+      },
+      required: ["file_name", "content"],
+    },
+  },
+  {
+    name: "search_drive",
+    description:
+      "Search Google Drive for files by name or content. Returns file names, IDs, and links.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Drive search query (e.g. \"name contains \'recovery\'\")" },
+        max_results: { type: "number", description: "Maximum results to return (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "create_drive_folder",
+    description: "Find or create a Google Drive folder by name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        folder_name: { type: "string", description: "Folder name" },
+        parent_id: { type: "string", description: "Parent folder ID (optional, defaults to root)" },
+      },
+      required: ["folder_name"],
+    },
+  },
+  {
+    name: "backup_recovery_doc",
+    description:
+      "Upload the latest recovery-doc.md to Google Drive in the Claude EA Backups folder. Runs automatically daily at 6am CST, but can be triggered manually.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "log_decision",
     description:
       "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",
