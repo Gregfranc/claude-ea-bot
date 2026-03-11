@@ -1,6 +1,9 @@
 require("dotenv").config();
 const { App } = require("@slack/bolt");
 const Anthropic = require("@anthropic-ai/sdk");
+const OpenAI = require("openai");
+const https = require("https");
+const http = require("http");
 const gmail = require("./tools/gmail");
 const calendar = require("./tools/calendar");
 const files = require("./tools/files");
@@ -17,6 +20,57 @@ const app = new App({
 });
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// --- Voice Note Transcription ---
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+const AUDIO_MIME_TYPES = [
+  "audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav",
+  "audio/x-m4a", "audio/mp3", "audio/aac", "audio/flac",
+  "video/webm", "video/mp4", // Slack sometimes sends voice notes as video
+];
+
+function downloadSlackFile(url, token) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith("https") ? https : http;
+    mod.get(url, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        return downloadSlackFile(res.headers.location, token).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+      }
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve(Buffer.concat(chunks)));
+      res.on("error", reject);
+    }).on("error", reject);
+  });
+}
+
+async function transcribeAudio(fileUrl, fileName) {
+  if (!openai) {
+    return null;
+  }
+  try {
+    const buffer = await downloadSlackFile(fileUrl, process.env.SLACK_BOT_TOKEN);
+    console.log(`[Voice] Downloaded ${fileName} (${(buffer.length / 1024).toFixed(1)} KB)`);
+
+    const file = new File([buffer], fileName || "voice.webm", { type: "audio/webm" });
+    const transcription = await openai.audio.transcriptions.create({
+      model: "whisper-1",
+      file,
+    });
+
+    console.log(`[Voice] Transcribed: "${transcription.text.substring(0, 100)}..."`);
+    return transcription.text;
+  } catch (err) {
+    console.error("[Voice] Transcription error:", err.message);
+    return null;
+  }
+}
 
 // --- System Prompts ---
 const OWNER_SYSTEM_PROMPT = `You are Claude EA, the executive assistant and chief of staff for Greg Francis, CEO of GF Development LLC. You are speaking directly with Greg.
@@ -235,7 +289,31 @@ app.message(async ({ message, say }) => {
   if (message.subtype) return;
 
   const userId = message.user;
-  const text = message.text;
+  let text = message.text || "";
+
+  // Check for audio files (voice notes)
+  const audioFile = (message.files || []).find((f) =>
+    AUDIO_MIME_TYPES.some((mime) => (f.mimetype || "").startsWith(mime.split("/")[0]))
+  );
+
+  if (audioFile && !text) {
+    if (!openai) {
+      await say("Voice notes require an OpenAI API key. Ask Greg to add OPENAI_API_KEY to the bot config.");
+      return;
+    }
+    await say("Transcribing voice note...");
+    const transcript = await transcribeAudio(
+      audioFile.url_private_download || audioFile.url_private,
+      audioFile.name
+    );
+    if (!transcript) {
+      await say("Could not transcribe that voice note. Try again or type your message.");
+      return;
+    }
+    text = transcript;
+    await say(`*Transcribed:* ${text}`);
+  }
+
   if (!text) return;
 
   const isOwner = userId === OWNER_USER_ID;
