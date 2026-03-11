@@ -8,6 +8,7 @@ const gmail = require("./tools/gmail");
 const calendar = require("./tools/calendar");
 const files = require("./tools/files");
 const learning = require("./tools/learning");
+const drive = require("./tools/drive");
 const { OWNER_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
 
 // --- Config ---
@@ -58,7 +59,7 @@ async function transcribeAudio(fileUrl, fileName) {
     const buffer = await downloadSlackFile(fileUrl, process.env.SLACK_BOT_TOKEN);
     console.log(`[Voice] Downloaded ${fileName} (${(buffer.length / 1024).toFixed(1)} KB)`);
 
-    const file = new File([buffer], fileName || "voice.webm", { type: "audio/webm" });
+    const file = await openai.toFile(buffer, fileName || "voice.webm", { type: "audio/webm" });
     const transcription = await openai.audio.transcriptions.create({
       model: "whisper-1",
       file,
@@ -201,6 +202,14 @@ async function executeTool(toolName, toolInput) {
       return await gmail.deleteLabelByName(toolInput.label_name);
     case "learn_from_inbox":
       return await learning.learnFromGreg();
+    case "upload_to_drive":
+      return await drive.uploadFile(toolInput.file_name, toolInput.content, toolInput.mime_type, toolInput.folder_id);
+    case "search_drive":
+      return await drive.searchFiles(toolInput.query, toolInput.max_results);
+    case "create_drive_folder":
+      return await drive.findOrCreateFolder(toolInput.folder_name, toolInput.parent_id);
+    case "backup_recovery_doc":
+      return await drive.uploadRecoveryBackup();
     case "log_decision":
       return await files.appendToDecisionLog(
         toolInput.decision,
@@ -667,6 +676,73 @@ async function runTriageAnalysis() {
   }
 }
 
+// --- Daily Recovery Backup ---
+// Uploads recovery-doc.md to Google Drive at 6am CST daily
+const BACKUP_HOUR = 6; // 6am CST
+let backupTimer = null;
+
+function getNextBackupTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  let daysToAdd = 0;
+  if (currentHour > BACKUP_HOUR || (currentHour === BACKUP_HOUR && currentMin >= 5)) {
+    daysToAdd = 1; // already past today's window, do tomorrow
+  }
+
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(BACKUP_HOUR, 5, 0, 0); // :05 past the hour
+  return target.getTime() - cst.getTime();
+}
+
+function scheduleNextBackup() {
+  if (backupTimer) clearTimeout(backupTimer);
+  const msUntil = getNextBackupTime();
+  backupTimer = setTimeout(async () => {
+    await runDailyBackup();
+    scheduleNextBackup();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[Backup] Next recovery doc backup at ${BACKUP_HOUR}:05 CST (in ${hoursUntil} hours).`);
+}
+
+async function runDailyBackup() {
+  try {
+    console.log("[Backup] Uploading daily recovery doc to Google Drive...");
+    const result = await drive.uploadRecoveryBackup();
+
+    if (result.error) {
+      console.error("[Backup] Failed:", result.error);
+      return;
+    }
+
+    console.log(`[Backup] Recovery doc ${result.action}: ${result.name} in ${result.folder}`);
+
+    // Silently log success. No need to DM Greg unless it fails.
+    // If you want to notify Greg, uncomment below:
+    // const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+    // await app.client.chat.postMessage({
+    //   channel: dmChannel.channel.id,
+    //   text: `Recovery doc backed up to Google Drive: ${result.name}`,
+    // });
+  } catch (err) {
+    console.error("[Backup] Error:", err.message);
+    // Notify Greg on failure so he knows backups stopped
+    try {
+      const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+      await app.client.chat.postMessage({
+        channel: dmChannel.channel.id,
+        text: `Recovery doc backup failed: ${err.message}. Check bot logs.`,
+      });
+    } catch (e) {
+      console.error("[Backup] Could not notify Greg:", e.message);
+    }
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -686,4 +762,7 @@ async function runTriageAnalysis() {
 
   scheduleNextAnalysis();
   console.log("[Triage Analysis] Daily reports scheduled at noon and 7pm CST.");
+
+  scheduleNextBackup();
+  console.log("[Backup] Daily recovery doc backup scheduled at 6:05am CST.");
 })();
