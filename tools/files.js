@@ -1,7 +1,10 @@
 const fs = require("fs").promises;
 const path = require("path");
+const { execFile } = require("child_process");
 
-const PROJECT_ROOT = path.resolve(__dirname, "../../");
+// On VPS: /opt/claude-ea-project (cloned private repo)
+// Locally: parent of slack-bot directory
+const PROJECT_ROOT = process.env.EA_PROJECT_PATH || path.resolve(__dirname, "../../");
 
 const ALLOWED_PATHS = [
   "context/",
@@ -25,6 +28,9 @@ async function readProjectFile(filePath) {
     };
   }
 
+  // Pull latest before reading
+  await gitPull();
+
   const fullPath = path.resolve(PROJECT_ROOT, filePath);
   try {
     const content = await fs.readFile(fullPath, "utf-8");
@@ -45,7 +51,8 @@ async function writeProjectFile(filePath, content) {
   try {
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, content, "utf-8");
-    return { path: filePath, message: `File updated: ${filePath}` };
+    await gitSync(`Update ${filePath} via Slack bot`);
+    return { path: filePath, message: `File updated and synced: ${filePath}` };
   } catch (err) {
     return { error: `Could not write ${filePath}: ${err.message}` };
   }
@@ -79,10 +86,36 @@ async function appendToDecisionLog(decision, reasoning, context) {
   try {
     await fs.mkdir(path.dirname(logPath), { recursive: true });
     await fs.appendFile(logPath, entry, "utf-8");
-    return { message: `Decision logged: ${decision}` };
+    await gitSync(`Log decision: ${decision.substring(0, 50)}`);
+    return { message: `Decision logged and synced: ${decision}` };
   } catch (err) {
     return { error: `Could not append to decision log: ${err.message}` };
   }
+}
+
+function gitSync(message) {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", PROJECT_ROOT, "add", "-A"], (err) => {
+      if (err) { console.error("[Files] git add failed:", err.message); return resolve(false); }
+      execFile("git", ["-C", PROJECT_ROOT, "commit", "-m", message], (err) => {
+        if (err) { console.log("[Files] git commit skipped (no changes or error)"); return resolve(false); }
+        execFile("git", ["-C", PROJECT_ROOT, "push"], (err) => {
+          if (err) { console.error("[Files] git push failed:", err.message); return resolve(false); }
+          console.log(`[Files] Synced to GitHub: ${message}`);
+          resolve(true);
+        });
+      });
+    });
+  });
+}
+
+function gitPull() {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", PROJECT_ROOT, "pull", "--ff-only"], (err) => {
+      if (err) { console.error("[Files] git pull failed:", err.message); }
+      resolve(!err);
+    });
+  });
 }
 
 module.exports = {
@@ -90,4 +123,6 @@ module.exports = {
   writeProjectFile,
   listProjectFiles,
   appendToDecisionLog,
+  gitSync,
+  gitPull,
 };
