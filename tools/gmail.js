@@ -459,6 +459,7 @@ async function triageInbox(hoursBack = 6) {
   const noiseLabel = await getOrCreateLabel("EA/Noise");
   const triagedLabel = await getOrCreateLabel("EA/Triaged");
   const fileLabel = await getOrCreateLabel("file");
+  const needsLabelLabel = await getOrCreateLabel("EA/Needs Label");
 
   // Pre-fetch all labels for deal label lookup
   const allLabels = await listLabels();
@@ -475,10 +476,10 @@ async function triageInbox(hoursBack = 6) {
   });
 
   if (!res.data.messages || res.data.messages.length === 0) {
-    return { triaged: 0, starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, fileLabeled: 0, aiCalls: 0, details: [] };
+    return { triaged: 0, starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
   }
 
-  const results = { starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, fileLabeled: 0, aiCalls: 0, details: [] };
+  const results = { starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
 
   for (const msg of res.data.messages) {
     const full = await gmailClient.users.messages.get({
@@ -558,7 +559,10 @@ async function triageInbox(hoursBack = 6) {
     }
 
     // Apply deal label if AI found one
-    if (dealLabel) {
+    if (dealLabel === "unknown") {
+      modifications.addLabelIds.push(needsLabelLabel.id);
+      results.needsLabel++;
+    } else if (dealLabel) {
       let dealLabelId = labelByName[dealLabel];
       if (!dealLabelId) {
         const created = await getOrCreateLabel(dealLabel);

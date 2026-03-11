@@ -398,31 +398,40 @@ async function runAutoTriage() {
     }
 
     console.log(
-      `[Auto-Triage] Triaged ${results.triaged}: ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.fileLabeled || 0} with attachments, ${results.newsletters} newsletters, ${results.noise} noise archived, ${results.aiCalls || 0} AI calls`
+      `[Auto-Triage] Triaged ${results.triaged}: ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.needsLabel || 0} needs-label, ${results.fileLabeled || 0} with attachments, ${results.newsletters} newsletters, ${results.noise} noise archived, ${results.aiCalls || 0} AI calls`
     );
 
-    // Notify Greg in DM if there are action items or deal labels applied
-    if (results.starred > 0 || results.dealLabeled > 0) {
+    // Notify Greg in DM if there are action items, deal labels, or needs-label emails
+    if (results.starred > 0 || results.dealLabeled > 0 || results.needsLabel > 0) {
       const starredEmails = results.details
         .filter((d) => d.category === "EA/Action")
         .map((d) => {
           const fromName = d.from.replace(/<.*>/, "").trim();
-          const deal = d.dealLabel && d.dealLabel !== "none" ? ` [${d.dealLabel}]` : "";
+          const deal = d.dealLabel && d.dealLabel !== "none" && d.dealLabel !== "unknown" ? ` [${d.dealLabel}]` : "";
           return `• ${fromName} — ${d.subject}${deal}`;
         })
         .join("\n");
 
       const dealEmails = results.details
-        .filter((d) => d.dealLabel && d.dealLabel !== "none" && d.category !== "EA/Action")
+        .filter((d) => d.dealLabel && d.dealLabel !== "none" && d.dealLabel !== "unknown" && d.category !== "EA/Action")
         .map((d) => {
           const fromName = d.from.replace(/<.*>/, "").trim();
           return `• ${fromName} — ${d.subject} → ${d.dealLabel}`;
         })
         .join("\n");
 
-      let message = `*Inbox triage:* ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.fileLabeled || 0} filed, ${results.newsletters} newsletters, ${results.noise} noise archived (${results.aiCalls || 0} AI reads).`;
+      const needsLabelEmails = results.details
+        .filter((d) => d.dealLabel === "unknown")
+        .map((d) => {
+          const fromName = d.from.replace(/<.*>/, "").trim();
+          return `• ${fromName} — ${d.subject}`;
+        })
+        .join("\n");
+
+      let message = `*Inbox triage:* ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.needsLabel || 0} needs label, ${results.fileLabeled || 0} filed, ${results.newsletters} newsletters, ${results.noise} noise archived (${results.aiCalls || 0} AI reads).`;
       if (starredEmails) message += `\n\n*Starred:*\n${starredEmails}`;
       if (dealEmails) message += `\n\n*Deal-labeled:*\n${dealEmails}`;
+      if (needsLabelEmails) message += `\n\n*Needs deal label (check "EA/Needs Label" in Gmail):*\n${needsLabelEmails}`;
 
       const dmChannel = await app.client.conversations.open({
         users: OWNER_USER_ID,

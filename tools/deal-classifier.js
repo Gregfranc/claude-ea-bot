@@ -91,7 +91,9 @@ ${emailContent}
 
 Respond with exactly two lines:
 Line 1: "star", "fyi", or "noise"
-Line 2: The deal label (e.g. "CONTRACTED/sim") or "none" if it doesn't match any deal`,
+Line 2: The deal label (e.g. "CONTRACTED/sim"), "unknown" if the email seems deal/property-related but doesn't clearly match a deal above, or "none" if it's not deal-related at all.
+
+IMPORTANT: Only use a deal label from the list above. If the email mentions a property, parcel, or deal that is NOT in the list, respond with "unknown" — do NOT guess or pick the closest match.`,
         },
       ],
     });
@@ -107,12 +109,14 @@ Line 2: The deal label (e.g. "CONTRACTED/sim") or "none" if it doesn't match any
     const finalAction = validActions.includes(action.toLowerCase()) ? action.toLowerCase() : "fyi";
 
     // Validate deal label
-    if (deal !== "none" && deal !== "\"none\"") {
-      const cleaned = deal.replace(/^["']|["']$/g, "");
-      const match = dealLabels.find((d) => d.label === cleaned);
-      deal = match ? match.label : null;
-    } else {
+    const cleanedDeal = deal.replace(/^["']|["']$/g, "").trim().toLowerCase();
+    if (cleanedDeal === "none") {
       deal = null;
+    } else if (cleanedDeal === "unknown") {
+      deal = "unknown";
+    } else {
+      const match = dealLabels.find((d) => d.label === deal.replace(/^["']|["']$/g, ""));
+      deal = match ? match.label : "unknown"; // unrecognized label = unknown
     }
 
     return { action: finalAction, deal };
