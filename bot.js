@@ -438,6 +438,125 @@ async function runAutoTriage() {
   }
 }
 
+// --- Daily Triage Analysis ---
+// DMs Greg a quality report at noon and 7pm CST
+const ANALYSIS_HOURS = [12, 19]; // noon and 7pm CST
+let analysisTimer = null;
+
+function getNextAnalysisTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  // Find next analysis hour
+  let targetHour = ANALYSIS_HOURS.find((h) => h > currentHour || (h === currentHour && currentMin < 3));
+  let daysToAdd = 0;
+  if (!targetHour) {
+    targetHour = ANALYSIS_HOURS[0]; // wrap to tomorrow's first slot
+    daysToAdd = 1;
+  }
+
+  // Build target time in CST
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(targetHour, 3, 0, 0); // :03 past the hour to avoid exact marks
+  const msUntil = target.getTime() - cst.getTime();
+  return { msUntil, targetHour };
+}
+
+function scheduleNextAnalysis() {
+  if (analysisTimer) clearTimeout(analysisTimer);
+  const { msUntil, targetHour } = getNextAnalysisTime();
+  analysisTimer = setTimeout(async () => {
+    await runTriageAnalysis();
+    scheduleNextAnalysis();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[Triage Analysis] Next report at ${targetHour}:03 CST (in ${hoursUntil} hours).`);
+}
+
+async function runTriageAnalysis() {
+  try {
+    console.log("[Triage Analysis] Generating daily triage quality report...");
+    const gmailClient = gmail.getGmail();
+
+    // Get today's triaged, starred, and noise emails
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}`;
+
+    const [triagedRes, starredRes, noiseRes, newsletterRes] = await Promise.all([
+      gmailClient.users.messages.list({ userId: "me", q: `label:EA-Triaged after:${todayStr}`, maxResults: 100 }),
+      gmailClient.users.messages.list({ userId: "me", q: `is:starred after:${todayStr}`, maxResults: 50 }),
+      gmailClient.users.messages.list({ userId: "me", q: `label:EA-Noise after:${todayStr}`, maxResults: 50 }),
+      gmailClient.users.messages.list({ userId: "me", q: `label:Newsletters after:${todayStr}`, maxResults: 50 }),
+    ]);
+
+    const triagedCount = triagedRes.data.messages?.length || 0;
+    const starredCount = starredRes.data.messages?.length || 0;
+    const noiseCount = noiseRes.data.messages?.length || 0;
+    const newsletterCount = newsletterRes.data.messages?.length || 0;
+    const fyi = triagedCount - starredCount - noiseCount - newsletterCount;
+
+    // Get details on starred emails
+    let starredDetails = [];
+    if (starredRes.data.messages) {
+      for (const msg of starredRes.data.messages.slice(0, 15)) {
+        try {
+          const full = await gmailClient.users.messages.get({ userId: "me", id: msg.id, format: "metadata", metadataHeaders: ["From", "Subject"] });
+          const headers = full.data.payload.headers;
+          const from = (headers.find((h) => h.name === "From") || {}).value || "Unknown";
+          const subject = (headers.find((h) => h.name === "Subject") || {}).value || "(no subject)";
+          const fromName = from.replace(/<.*>/, "").trim();
+          starredDetails.push(`• ${fromName}: ${subject}`);
+        } catch {}
+      }
+    }
+
+    // Get details on noise to spot-check for false negatives
+    let noiseDetails = [];
+    if (noiseRes.data.messages) {
+      for (const msg of noiseRes.data.messages.slice(0, 10)) {
+        try {
+          const full = await gmailClient.users.messages.get({ userId: "me", id: msg.id, format: "metadata", metadataHeaders: ["From", "Subject"] });
+          const headers = full.data.payload.headers;
+          const from = (headers.find((h) => h.name === "From") || {}).value || "Unknown";
+          const subject = (headers.find((h) => h.name === "Subject") || {}).value || "(no subject)";
+          const fromName = from.replace(/<.*>/, "").trim();
+          noiseDetails.push(`• ${fromName}: ${subject}`);
+        } catch {}
+      }
+    }
+
+    // Build the report
+    let report = `*Triage Analysis Report*\n`;
+    report += `Total triaged today: ${triagedCount}\n`;
+    report += `Starred: ${starredCount} | FYI: ${Math.max(0, fyi)} | Newsletters: ${newsletterCount} | Noise: ${noiseCount}\n`;
+
+    if (starredDetails.length > 0) {
+      report += `\n*Starred emails:*\n${starredDetails.join("\n")}\n`;
+    } else {
+      report += `\n*No emails starred today.* If there were deal or team emails, the triage may be under-starring.\n`;
+    }
+
+    if (noiseDetails.length > 0) {
+      report += `\n*Noise sample (spot-check these):*\n${noiseDetails.join("\n")}\n`;
+    }
+
+    report += `\nReply with any corrections (e.g. "star brian emails" or "noise cloudflare") and I'll update the triage rules.`;
+
+    const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+    await app.client.chat.postMessage({
+      channel: dmChannel.channel.id,
+      text: report,
+    });
+
+    console.log("[Triage Analysis] Report sent to Greg.");
+  } catch (err) {
+    console.error("[Triage Analysis] Error:", err.message);
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -454,4 +573,7 @@ async function runAutoTriage() {
   // Schedule adaptive triage (15 min daytime, 60 min nighttime CST)
   scheduleNextTriage();
   console.log("[Auto-Triage] Adaptive schedule active (15 min 5am-11pm CST, 60 min overnight).");
+
+  scheduleNextAnalysis();
+  console.log("[Triage Analysis] Daily reports scheduled at noon and 7pm CST.");
 })();
