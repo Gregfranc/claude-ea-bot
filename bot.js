@@ -33,15 +33,25 @@ const AUDIO_MIME_TYPES = [
   "video/webm", "video/mp4", // Slack sometimes sends voice notes as video
 ];
 
+const fs = require("fs");
+const os = require("os");
+const pathMod = require("path");
+
 function downloadSlackFile(url, token) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith("https") ? https : http;
-    mod.get(url, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+    const headers = {};
+    // Only send auth to Slack URLs, not CDN redirects
+    if (url.includes("slack.com") || url.includes("files.slack")) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    mod.get(url, { headers }, (res) => {
       if (res.statusCode === 302 || res.statusCode === 301) {
+        console.log(`[Voice] Redirect: ${res.statusCode} -> ${res.headers.location?.substring(0, 80)}...`);
         return downloadSlackFile(res.headers.location, token).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
-        return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+        return reject(new Error(`Download failed: HTTP ${res.statusCode} from ${url.substring(0, 80)}`));
       }
       const chunks = [];
       res.on("data", (chunk) => chunks.push(chunk));
@@ -53,22 +63,39 @@ function downloadSlackFile(url, token) {
 
 async function transcribeAudio(fileUrl, fileName) {
   if (!openai) {
+    console.error("[Voice] OpenAI client not initialized (missing OPENAI_API_KEY?)");
     return null;
   }
   try {
+    console.log(`[Voice] Downloading from: ${fileUrl?.substring(0, 80)}...`);
     const buffer = await downloadSlackFile(fileUrl, process.env.SLACK_BOT_TOKEN);
     console.log(`[Voice] Downloaded ${fileName} (${(buffer.length / 1024).toFixed(1)} KB)`);
 
-    const file = await openai.toFile(buffer, fileName || "voice.webm", { type: "audio/webm" });
+    if (buffer.length < 100) {
+      console.error("[Voice] File too small, likely a download error. First bytes:", buffer.toString("utf-8", 0, 200));
+      return null;
+    }
+
+    // Write to temp file and use fs.createReadStream (most compatible with Whisper API)
+    const tmpPath = pathMod.join(os.tmpdir(), `voice-${Date.now()}.webm`);
+    fs.writeFileSync(tmpPath, buffer);
+    console.log(`[Voice] Wrote temp file: ${tmpPath}`);
+
     const transcription = await openai.audio.transcriptions.create({
       model: "whisper-1",
-      file,
+      file: fs.createReadStream(tmpPath),
     });
+
+    // Clean up temp file
+    try { fs.unlinkSync(tmpPath); } catch {}
 
     console.log(`[Voice] Transcribed: "${transcription.text.substring(0, 100)}..."`);
     return transcription.text;
   } catch (err) {
     console.error("[Voice] Transcription error:", err.message);
+    if (err.response) {
+      console.error("[Voice] API response:", JSON.stringify(err.response?.data || err.response?.body || "no body"));
+    }
     return null;
   }
 }
