@@ -19,6 +19,16 @@ function getDealLabels() {
   return [];
 }
 
+function getTier1Senders() {
+  if (learningModule) {
+    try {
+      const profile = learningModule.loadProfile();
+      return profile.tier1_senders || [];
+    } catch {}
+  }
+  return [];
+}
+
 function buildDealContext(dealLabels) {
   if (dealLabels.length === 0) return null;
   return dealLabels
@@ -29,7 +39,9 @@ function buildDealContext(dealLabels) {
 // Combined triage: reads email and decides both action level AND deal label in one call
 async function triageEmail(from, subject, snippet, body, threadIsReply) {
   const dealLabels = getDealLabels();
+  const tier1Senders = getTier1Senders();
   const dealContext = dealLabels.length > 0 ? buildDealContext(dealLabels) : "No active deals configured.";
+  const vipList = tier1Senders.length > 0 ? tier1Senders.join(", ") : "none configured";
 
   const emailContent = [
     `From: ${from}`,
@@ -50,20 +62,26 @@ async function triageEmail(from, subject, snippet, body, threadIsReply) {
           role: "user",
           content: `You triage emails for Greg Francis, CEO of GF Development LLC (land acquisition and entitlements).
 
-Greg needs to see emails where:
-- Someone is asking him a question or waiting for his response
+ALWAYS STAR if:
+- The sender is from @gfdevllc.com (Greg's company: Rachel, Brian, Marwan)
+- The sender matches any VIP name below (even partially in their email or display name)
+- Someone is asking Greg a question or waiting for his response
 - A deal update requires his attention or decision
-- A team member (Rachel, Brian, Marwan) needs something from him
 - There's a deadline, closing date, inspection, or time-sensitive item
-- Someone important in his business network is reaching out directly
-- A support conversation he initiated has a new response
+- Someone in his business network is reaching out directly (not mass email)
+- A support conversation Greg initiated has a new response
+- The email is part of an active deal thread (check deal list below)
 
-Greg does NOT need to see:
-- Newsletters, marketing emails, mass mailings (even from people he knows)
-- Automated notifications (shipping, receipts, account alerts)
-- Purely informational updates that need no response
-- Social media notifications
-- Cold outreach and sales pitches
+When in doubt between "star" and "fyi", choose "star". Greg prefers false positives over missed emails.
+
+Mark as "fyi" only if:
+- Purely informational with no action needed AND not from a VIP sender
+
+Mark as "noise" only if:
+- Newsletters, marketing, mass mailings, automated notifications, social media, cold outreach, shipping/receipts
+
+VIP SENDERS (star any email from these people/domains):
+${vipList}
 
 ACTIVE DEALS:
 ${dealContext}
@@ -72,7 +90,7 @@ EMAIL:
 ${emailContent}
 
 Respond with exactly two lines:
-Line 1: "star" (Greg needs to act/respond), "fyi" (relevant but no action needed), or "noise" (junk/marketing/automated)
+Line 1: "star", "fyi", or "noise"
 Line 2: The deal label (e.g. "CONTRACTED/sim") or "none" if it doesn't match any deal`,
         },
       ],
