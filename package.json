@@ -1,0 +1,16 @@
+{
+  "name": "claude-ea-slack-bot",
+  "version": "1.0.0",
+  "description": "Claude EA Slack bot for GF Development LLC",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@slack/bolt": "^4.1.0",
+    "dotenv": "^17.3.1",
+    "googleapis": "^171.4.0",
+    "open": "^11.0.0"
+  }
+}

@@ -1,0 +1,222 @@
+[
+  {
+    "timestamp": "2026-03-10T18:33:27.304Z",
+    "messageId": "19cd8c1fcf5c319d",
+    "from": "noreply@tm.openai.com",
+    "subject": "Your ChatGPT code is 458850",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "noreply@tm.openai.com"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.306Z",
+    "messageId": "19cd87be62ba07b1",
+    "from": "Maryela <Maryela@landinsights.co>",
+    "subject": "Are You Coming to our Product Strategy Call? 👀",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "maryela"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.307Z",
+    "messageId": "19cd87b08dbf8ff0",
+    "from": "Wise Rate Alerts <noreply@wise.com>",
+    "subject": "Your daily update on USD to MXN",
+    "old_category": "EA/Noise",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "wise rate alerts"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.699Z",
+    "messageId": "19cd88408787eb12",
+    "from": "\"OpenAI (via incident.io)\" <no-reply@status.incident.io>",
+    "subject": "Codex unresponsive",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "\"openai (via incident.io)\""
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.765Z",
+    "messageId": "19cd87d3a90c0b63",
+    "from": "Google AI Studio <googleaistudio-noreply@google.com>",
+    "subject": "[Gemini API] Build multimodal RAG with new Gemini Embedding",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "google ai studio"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.828Z",
+    "messageId": "19cd87b08dbf8ff0",
+    "from": "Wise Rate Alerts <noreply@wise.com>",
+    "subject": "Your daily update on USD to MXN",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "wise rate alerts"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.890Z",
+    "messageId": "19cd87877a962ee0",
+    "from": "Zoom <no-reply@zoom.us>",
+    "subject": "STARTING NOW: Multiplier Workshop #3: AI Skills. Teach AI to Work the Way You Do.",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "zoom"
+  },
+  {
+    "timestamp": "2026-03-10T18:33:27.960Z",
+    "messageId": "19cd86af3000ffc3",
+    "from": "\"Sayulita Expats and... on Facebook\" <groupupdates@facebookmail.com>",
+    "subject": "Sayulita Expats and Newcomers :): \"Hi! We are looking for a...\"",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "\"sayulita expats and... on facebook\""
+  },
+  {
+    "timestamp": "2026-03-10T22:49:24.657Z",
+    "messageId": "19cd97514cc36612",
+    "from": "\"Citi Travel® with the Citi® Diamond Preferred® Card\" <citicards@info15.citi.com>",
+    "subject": "Take a tour through time for America's 250th anniversary",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "\"citi travel® with the citi® diamond preferred® card\""
+  },
+  {
+    "timestamp": "2026-03-10T22:49:25.271Z",
+    "messageId": "19cd973c9d3d8155",
+    "from": "American Airlines <AmericanAirlines@info.ms.aa.com>",
+    "subject": "Prepare for your upcoming trip to Puerto Vallarta",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "american airlines"
+  },
+  {
+    "timestamp": "2026-03-10T23:45:26.409Z",
+    "messageId": "19cd9deb6888efd9",
+    "from": "Tyler Johnson <TJohnson@landadvisors.com>",
+    "subject": "RE: Connecting",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "tyler johnson"
+  },
+  {
+    "timestamp": "2026-03-10T23:45:26.413Z",
+    "messageId": "19cd9dc5e0b45499",
+    "from": "Experian <support@e.usa.experian.com>",
+    "subject": "Greg, check out your card matches with an intro bonus",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "experian"
+  },
+  {
+    "timestamp": "2026-03-10T23:45:27.467Z",
+    "messageId": "19cd9b7f39550187",
+    "from": "Land Closers Academy <noreply@skool.com>",
+    "subject": "Ajay Sharma posted \"FINCEN BREAKDOWN\"",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "land closers academy"
+  },
+  {
+    "timestamp": "2026-03-10T23:45:27.534Z",
+    "messageId": "19cd9a9fd302883c",
+    "from": "\"OpenAI (via incident.io)\" <no-reply@status.incident.io>",
+    "subject": "ChatGPT: Increased errors on File Upload limits",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "\"openai (via incident.io)\""
+  },
+  {
+    "timestamp": "2026-03-10T23:47:25.617Z",
+    "messageId": "19cd9c26b449ca5d",
+    "from": "\"OpenAI (via incident.io)\" <no-reply@status.incident.io>",
+    "subject": "Increased errors on ChatGPT File Uploads",
+    "old_category": "manual",
+    "new_category": "EA/Noise",
+    "signal": "manual_noise_label",
+    "sender_pattern": "\"openai (via incident.io)\""
+  },
+  {
+    "timestamp": "2026-03-11T00:24:10.219Z",
+    "messageId": "19cda080f65cee95",
+    "from": "<jason@ham-engr.com>",
+    "subject": "RE: Sim - Doe Ln - survey",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "ham-engr.com"
+  },
+  {
+    "timestamp": "2026-03-11T00:54:05.391Z",
+    "messageId": "19cda2a2c238d36c",
+    "from": "Teresa Huynh <Teresa.Huynh@stewart.com>",
+    "subject": "RE: [External] Re: 2840601: 11135 Park Place Lane SE, Olympia, WA 98501: GF Development LLC: The Title Commitment is Ready",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "teresa huynh"
+  },
+  {
+    "timestamp": "2026-03-11T00:54:05.392Z",
+    "messageId": "19cda219a2455b39",
+    "from": "<jason@ham-engr.com>",
+    "subject": "RE: Sim - Doe Ln - survey",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "ham-engr.com"
+  },
+  {
+    "timestamp": "2026-03-11T00:58:26.219Z",
+    "messageId": "19cda2e2639161cd",
+    "from": "TITLE OFFICERS Customer Requests Shared Mail Shared Mailbox <titleofficers@stewart.com>",
+    "subject": "RE: [External] Re: 2840601: 11135 Park Place Lane SE, Olympia, WA 98501: GF Development LLC: The Title Commitment is Ready",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "title officers customer requests shared mail shared mailbox"
+  },
+  {
+    "timestamp": "2026-03-11T01:28:21.124Z",
+    "messageId": "19cda418f53ece44",
+    "from": "Heather Davidson <Heather.Davidson@stewart.com>",
+    "subject": "RE: [External] Re: 2840601: 11135 Park Place Lane SE, Olympia, WA 98501: GF Development LLC: The Title Commitment is Ready",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "heather davidson"
+  },
+  {
+    "timestamp": "2026-03-11T01:58:21.132Z",
+    "messageId": "19cda63a2f9e6858",
+    "from": "Sabrina Norton <sjnorton@firstam.com>",
+    "subject": "Intro To GF Development Team and Dale Forrest Contract",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "sabrina norton"
+  },
+  {
+    "timestamp": "2026-03-11T02:58:20.461Z",
+    "messageId": "19cda9a1c38bc291",
+    "from": "American Airlines <no-reply@info.email.aa.com>",
+    "subject": "Your flight from BOI",
+    "old_category": "unlabeled",
+    "new_category": "EA/Action",
+    "signal": "starred",
+    "sender_pattern": "american airlines"
+  }
+]

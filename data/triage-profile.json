@@ -1,0 +1,198 @@
+{
+  "tier1_senders": [
+    "rachel",
+    "brian chaplin",
+    "jarred",
+    "corbell",
+    "matt weston",
+    "boiseinfill",
+    "erik frechette",
+    "lennar",
+    "dustin barker",
+    "teague haley",
+    "chris duff",
+    "seriousland",
+    "mark krueger",
+    "landadvisors",
+    "dan birchfield",
+    "akaal",
+    "pinondg",
+    "james kirkebo",
+    "apexengineering",
+    "brian bellairs",
+    "bellairs-gorman",
+    "rosann garza",
+    "highdesertrealty",
+    "lisa tavares",
+    "lapinerealty",
+    "chris snapp",
+    "snappco",
+    "kara keeton",
+    "emma channpraseut",
+    "idwr.idaho.gov",
+    "ashley ivans",
+    "lapineoregon.gov",
+    "ben dejean",
+    "hunter thompson",
+    "raisingcapital",
+    "tim lynch",
+    "timlynchhomes",
+    "heidy barnett",
+    "westforkenv",
+    "holly cole",
+    "buysellcor",
+    "spencer cox",
+    "landai.ai",
+    "marwan",
+    "gfdevllc.com",
+    "nick tierney"
+  ],
+  "tier1_subjects": [
+    "traditions",
+    "brio vista",
+    "la pine",
+    "sims",
+    "cumley",
+    "forest",
+    "burnham ridge",
+    "sand hallow",
+    "roberts",
+    "sage creek",
+    "wasem",
+    "columbia view",
+    "doe lane",
+    "cagle",
+    "loi",
+    "contract",
+    "escrow",
+    "closing",
+    "contingency",
+    "inspection",
+    "entitlement",
+    "zoning",
+    "plat",
+    "easement",
+    "utility",
+    "water right",
+    "purchase agreement",
+    "boldsign",
+    "signed"
+  ],
+  "noise_senders": [
+    "ultramobile",
+    "docusign@mail",
+    "noreply@uber",
+    "no-reply@zoom",
+    "incident.io",
+    "noreply@google",
+    "mailer-daemon",
+    "drchrono",
+    "notta.zendesk",
+    "linkedin.com",
+    "wellsfargo",
+    "notifications-noreply",
+    "columbian-email",
+    "cryptoaaron",
+    "googleaistudio-noreply",
+    "facebookmail.com",
+    "skool.com"
+  ],
+  "noise_subjects": [
+    "delivery status",
+    "codex unresponsive",
+    "deep research",
+    "epaper",
+    "receipt",
+    "coverage in your area",
+    "online access agreement",
+    "celsius",
+    "ultra-reliable"
+  ],
+  "deal_labels": [
+    {
+      "label": "CONTRACTED/sim",
+      "deal": "Sims - La Pine OR",
+      "context": "La Pine Oregon lot development. Doe Ln / Doe Lane address. Nick Tierney at La Pine city planning. Rosann Garza / High Desert Realty listing agent. Brian Chaplin sourced."
+    },
+    {
+      "label": "CONTRACTED/Cumley",
+      "deal": "Cumley - La Pine OR",
+      "context": "La Pine Oregon deal. Brian Chaplin sourced. Lisa Tavares / La Pine Realty."
+    },
+    {
+      "label": "CONTRACTED/forest",
+      "deal": "Forest - La Pine OR",
+      "context": "La Pine Oregon deal. Brian Chaplin sourced."
+    },
+    {
+      "label": "CONTRACTED/Deal/Traditions",
+      "deal": "Traditions North - Dayton NV",
+      "context": "Dayton Nevada large entitlement project. Jarred Corbell consulting. Dan Birchfield / Pinon DG. Dustin Barker / Lennar buyer. Off-site easements. Dry utilities. Proforma. Chris Bennett / Petrus Partners deck."
+    },
+    {
+      "label": "CONTRACTED/Deal/BrioVista",
+      "deal": "Brio Vista - Boise ID",
+      "context": "Boise Idaho IRA-funded entitlement project. Matt Weston / Boise Infill. Kara Keeton. Erik Frechette / Lennar. Ben / RE and Partners hillside review. CFH25-00101. Directed IRA funding. Biltmore."
+    },
+    {
+      "label": "CONTRACTED/Deal/ColumbiaViewEstates",
+      "deal": "Columbia View Estates",
+      "context": "Columbia View development project."
+    },
+    {
+      "label": "CONTRACTED/Deal/Sage Creek",
+      "deal": "Sage Creek - Midvale ID",
+      "context": "Midvale Idaho flip. ~$25K projected gross profit. Listed for sale."
+    },
+    {
+      "label": "CONTRACTED/Deal/Wasem Road",
+      "deal": "Wasem Road - Idaho",
+      "context": "Wasem Rd Idaho. Harmon seller. Lot 3 buyer inspecting. Colton issue. Buyer leads."
+    },
+    {
+      "label": "CONTRACTED/Michael Roberts - Park Place",
+      "deal": "Roberts - Park Place / Thurston County",
+      "context": "Michael Roberts property. Park Place address. Thurston County WA. Rachel handling CARP application, wetlands, split. Heidy Barnett / West Fork Environmental critical area review."
+    },
+    {
+      "label": "CONTRACTED/coffer",
+      "deal": "Coffer - Kitsap County",
+      "context": "Kitsap County WA. APN 072302-2-016-2008. DD questions. Easement inquiry. Rachel handling."
+    },
+    {
+      "label": "CONTRACTED/Fraser_Roy WA",
+      "deal": "Fraser - Roy WA",
+      "context": "Roy Washington. 6810 325th. Kailee Franich listing agent. Fraser seller."
+    },
+    {
+      "label": "CONTRACTED/8802 S. Central Ave",
+      "deal": "8802 S Central Ave",
+      "context": "8802 S. Central Avenue property."
+    },
+    {
+      "label": "Negotiating Deals/burnham ridge",
+      "deal": "Burnham Ridge",
+      "context": "Preliminary plat. James Kirkebo / Apex Engineering. Introduction meeting."
+    },
+    {
+      "label": "Negotiating Deals/Stavrianakis",
+      "deal": "Stavrianakis - Canyon County",
+      "context": "Canyon County ID. APN 37652010 0. Water rights. Black Canyon irrigation. Emma Channpraseut / IDWR. Rachel handling."
+    },
+    {
+      "label": "Negotiating Deals/Cloverdale - Little-Hevrin-fivecoats",
+      "deal": "Cloverdale",
+      "context": "S Cloverdale property. Little, Hevrin, Fivecoats sellers. Ben / RE and Partners."
+    },
+    {
+      "label": "CONTRACTED/Meadow Vista - Standridge",
+      "deal": "Meadow Vista - Standridge",
+      "context": "Meadow Vista / Standridge deal."
+    },
+    {
+      "label": "CONTRACTED/Sale - Vancouver",
+      "deal": "Vancouver Sale",
+      "context": "Vancouver WA property sale. Buyers and brokers sub-label."
+    }
+  ]
+}
