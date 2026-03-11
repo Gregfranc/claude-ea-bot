@@ -460,6 +460,9 @@ async function triageInbox(hoursBack = 6) {
   const triagedLabel = await getOrCreateLabel("EA/Triaged");
   const fileLabel = await getOrCreateLabel("file");
   const needsLabelLabel = await getOrCreateLabel("EA/Needs Label");
+  const acctPaidLabel = await getOrCreateLabel("Accounting/Paid");
+  const acctUnpaidLabel = await getOrCreateLabel("Accounting/Unpaid");
+  const acctNeedsLabelLabel = await getOrCreateLabel("Accounting/Needs Label");
 
   // Pre-fetch all labels for deal label lookup
   const allLabels = await listLabels();
@@ -476,10 +479,10 @@ async function triageInbox(hoursBack = 6) {
   });
 
   if (!res.data.messages || res.data.messages.length === 0) {
-    return { triaged: 0, starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
+    return { triaged: 0, starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, acctPaid: 0, acctUnpaid: 0, acctNeedsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
   }
 
-  const results = { starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
+  const results = { starred: 0, newsletters: 0, noise: 0, fyi: 0, dealLabeled: 0, needsLabel: 0, acctPaid: 0, acctUnpaid: 0, acctNeedsLabel: 0, fileLabeled: 0, aiCalls: 0, details: [] };
 
   for (const msg of res.data.messages) {
     const full = await gmailClient.users.messages.get({
@@ -512,6 +515,7 @@ async function triageInbox(hoursBack = 6) {
 
     let action = null;
     let dealLabel = null;
+    let accounting = null;
 
     // --- Fast path: obvious noise (no AI needed) ---
     if (isObviousNoise(from, subject)) {
@@ -527,6 +531,7 @@ async function triageInbox(hoursBack = 6) {
         const aiResult = await dealClassifier.triageEmail(from, subject, snippet, body, isReply);
         action = aiResult.action; // "star", "fyi", or "noise"
         dealLabel = aiResult.deal;
+        accounting = aiResult.accounting;
         results.aiCalls++;
       } catch (err) {
         console.error(`[Triage] AI triage error for ${msg.id}:`, err.message);
@@ -573,6 +578,18 @@ async function triageInbox(hoursBack = 6) {
       results.dealLabeled++;
     }
 
+    // Apply accounting label if AI found one
+    if (accounting === "paid") {
+      modifications.addLabelIds.push(acctPaidLabel.id);
+      results.acctPaid++;
+    } else if (accounting === "unpaid") {
+      modifications.addLabelIds.push(acctUnpaidLabel.id);
+      results.acctUnpaid++;
+    } else if (accounting === "unknown-accounting") {
+      modifications.addLabelIds.push(acctNeedsLabelLabel.id);
+      results.acctNeedsLabel++;
+    }
+
     await gmailClient.users.messages.modify({
       userId: "me",
       id: msg.id,
@@ -584,6 +601,7 @@ async function triageInbox(hoursBack = 6) {
       subject,
       category: action === "star" ? "EA/Action" : action === "noise" ? "EA/Noise" : action === "newsletter" ? "newsletter" : "FYI",
       dealLabel: dealLabel || "none",
+      accounting: accounting || "none",
       hasAttachments: emailHasAttachments,
       usedAI: action !== "noise" && action !== "newsletter",
     });

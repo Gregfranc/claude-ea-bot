@@ -89,9 +89,10 @@ ${dealContext}
 EMAIL:
 ${emailContent}
 
-Respond with exactly two lines:
+Respond with exactly three lines:
 Line 1: "star", "fyi", or "noise"
 Line 2: The deal label (e.g. "CONTRACTED/sim"), "unknown" if the email seems deal/property-related but doesn't clearly match a deal above, or "none" if it's not deal-related at all.
+Line 3: Accounting classification: "paid" (receipt, payment confirmation, billing statement for something already paid), "unpaid" (new invoice, bill due, payment request that needs action), "unknown-accounting" (looks financial but unclear if paid or unpaid), or "none" (not accounting-related).
 
 IMPORTANT: Only use a deal label from the list above. If the email mentions a property, parcel, or deal that is NOT in the list, respond with "unknown" — do NOT guess or pick the closest match.`,
         },
@@ -103,6 +104,7 @@ IMPORTANT: Only use a deal label from the list above. If the email mentions a pr
 
     const action = lines[0] || "fyi";
     let deal = lines[1] || "none";
+    let accounting = (lines[2] || "none").replace(/^["']|["']$/g, "").trim().toLowerCase();
 
     // Validate action
     const validActions = ["star", "fyi", "noise"];
@@ -119,10 +121,15 @@ IMPORTANT: Only use a deal label from the list above. If the email mentions a pr
       deal = match ? match.label : "unknown"; // unrecognized label = unknown
     }
 
-    return { action: finalAction, deal };
+    // Validate accounting classification
+    const validAccounting = ["paid", "unpaid", "unknown-accounting", "none"];
+    if (!validAccounting.includes(accounting)) accounting = "none";
+    if (accounting === "none") accounting = null;
+
+    return { action: finalAction, deal, accounting };
   } catch (err) {
     console.error("[Triage AI] Error:", err.message);
-    return { action: "fyi", deal: null };
+    return { action: "fyi", deal: null, accounting: null };
   }
 }
 

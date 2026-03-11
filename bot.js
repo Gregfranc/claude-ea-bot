@@ -401,8 +401,10 @@ async function runAutoTriage() {
       `[Auto-Triage] Triaged ${results.triaged}: ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.needsLabel || 0} needs-label, ${results.fileLabeled || 0} with attachments, ${results.newsletters} newsletters, ${results.noise} noise archived, ${results.aiCalls || 0} AI calls`
     );
 
-    // Notify Greg in DM if there are action items, deal labels, or needs-label emails
-    if (results.starred > 0 || results.dealLabeled > 0 || results.needsLabel > 0) {
+    const hasAccounting = (results.acctPaid || 0) + (results.acctUnpaid || 0) + (results.acctNeedsLabel || 0) > 0;
+
+    // Notify Greg in DM if there are action items, deal labels, needs-label, or accounting emails
+    if (results.starred > 0 || results.dealLabeled > 0 || results.needsLabel > 0 || hasAccounting) {
       const starredEmails = results.details
         .filter((d) => d.category === "EA/Action")
         .map((d) => {
@@ -428,10 +430,29 @@ async function runAutoTriage() {
         })
         .join("\n");
 
+      const acctUnpaidEmails = results.details
+        .filter((d) => d.accounting === "unpaid")
+        .map((d) => {
+          const fromName = d.from.replace(/<.*>/, "").trim();
+          return `• ${fromName} — ${d.subject}`;
+        })
+        .join("\n");
+
+      const acctNeedsLabelEmails = results.details
+        .filter((d) => d.accounting === "unknown-accounting")
+        .map((d) => {
+          const fromName = d.from.replace(/<.*>/, "").trim();
+          return `• ${fromName} — ${d.subject}`;
+        })
+        .join("\n");
+
       let message = `*Inbox triage:* ${results.starred} starred, ${results.fyi || 0} fyi, ${results.dealLabeled || 0} deal-labeled, ${results.needsLabel || 0} needs label, ${results.fileLabeled || 0} filed, ${results.newsletters} newsletters, ${results.noise} noise archived (${results.aiCalls || 0} AI reads).`;
+      if (hasAccounting) message += ` Accounting: ${results.acctPaid || 0} paid, ${results.acctUnpaid || 0} unpaid, ${results.acctNeedsLabel || 0} needs review.`;
       if (starredEmails) message += `\n\n*Starred:*\n${starredEmails}`;
       if (dealEmails) message += `\n\n*Deal-labeled:*\n${dealEmails}`;
       if (needsLabelEmails) message += `\n\n*Needs deal label (check "EA/Needs Label" in Gmail):*\n${needsLabelEmails}`;
+      if (acctUnpaidEmails) message += `\n\n*Unpaid invoices (check "Accounting/Unpaid"):*\n${acctUnpaidEmails}`;
+      if (acctNeedsLabelEmails) message += `\n\n*Accounting needs review (check "Accounting/Needs Label"):*\n${acctNeedsLabelEmails}`;
 
       const dmChannel = await app.client.conversations.open({
         users: OWNER_USER_ID,
