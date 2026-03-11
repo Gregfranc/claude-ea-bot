@@ -286,7 +286,8 @@ function trimHistory(history) {
 
 // --- Message Handler ---
 app.message(async ({ message, say }) => {
-  if (message.subtype) return;
+  // Allow file_share (voice notes, attachments) through; skip other subtypes
+  if (message.subtype && message.subtype !== "file_share") return;
 
   const userId = message.user;
   let text = message.text || "";
@@ -296,7 +297,7 @@ app.message(async ({ message, say }) => {
     AUDIO_MIME_TYPES.some((mime) => (f.mimetype || "").startsWith(mime.split("/")[0]))
   );
 
-  if (audioFile && !text) {
+  if (audioFile) {
     if (!openai) {
       await say("Voice notes require an OpenAI API key. Ask Greg to add OPENAI_API_KEY to the bot config.");
       return;
@@ -310,8 +311,9 @@ app.message(async ({ message, say }) => {
       await say("Could not transcribe that voice note. Try again or type your message.");
       return;
     }
-    text = transcript;
-    await say(`*Transcribed:* ${text}`);
+    // If Greg sent text with the voice note, prepend it
+    text = text ? `${text}\n\n[Voice note transcription]: ${transcript}` : transcript;
+    await say(`*Transcribed:* ${transcript}`);
   }
 
   if (!text) return;
