@@ -77,7 +77,8 @@ async function transcribeAudio(fileUrl, fileName) {
     }
 
     // Write to temp file and use fs.createReadStream (most compatible with Whisper API)
-    const tmpPath = pathMod.join(os.tmpdir(), `voice-${Date.now()}.webm`);
+    const ext = pathMod.extname(fileName || "voice.webm") || ".webm";
+    const tmpPath = pathMod.join(os.tmpdir(), `voice-${Date.now()}${ext}`);
     fs.writeFileSync(tmpPath, buffer);
     console.log(`[Voice] Wrote temp file: ${tmpPath}`);
 
