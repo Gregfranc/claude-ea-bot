@@ -456,6 +456,29 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "file_meeting_notes",
+    description:
+      "File a detected meeting note/transcript to Google Drive after Greg confirms. Saves to both the deal folder (under Meeting Notes & Transcripts/) and the master Meeting Transcripts/ folder. Use the pending_id from the meeting note notification.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pending_id: {
+          type: "string",
+          description: "The pending meeting ID from the notification (e.g. mtg-1234567890-abcd)",
+        },
+        project: {
+          type: "string",
+          description: "Project to file under (optional, uses suggested project if not provided)",
+        },
+        file_name: {
+          type: "string",
+          description: "File name override in snake_case, no date prefix (optional, uses suggested name if not provided)",
+        },
+      },
+      required: ["pending_id"],
+    },
+  },
+  {
     name: "log_decision",
     description:
       "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",

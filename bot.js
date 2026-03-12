@@ -13,6 +13,7 @@ const pipeline = require("./tools/pipeline");
 const { OWNER_TOOLS, TEAM_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
 const permissions = require("./tools/permissions");
 const transcript = require("./tools/transcript");
+const meetingNotes = require("./tools/meeting-notes");
 const driveTeam = require("./tools/drive-team");
 const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
@@ -172,6 +173,8 @@ When sending emails or making calendar changes, confirm the action with Greg bef
 IMPORTANT: When Greg sends a message and your response will take time (tool calls, research), immediately acknowledge with a brief "Got it" or similar before doing the work. Don't leave him waiting with no response.
 
 You can process meeting transcripts. When Greg uploads a document file (transcript, notes, .txt, .pdf, .vtt, .srt, .json) or pastes transcript text, use the process_transcript tool to summarize it, classify it to a project, and save it to Google Drive under Meeting Transcripts/{project}/. The tool extracts key decisions, action items, and follow-ups. Pass the file_ref shown in the message for uploaded files.
+
+Meeting notes are automatically detected from email (Read AI, Notta, etc.) and Google Drive (Gemini Notes). When a meeting note is detected, you will have DM'd Greg a summary with a pending ID. When Greg replies to confirm (e.g. "file it", "file to Traditions North", "rename to xyz"), use the file_meeting_notes tool with the pending_id from the notification. This saves to both the deal folder and the master Meeting Transcripts folder.
 
 Your infrastructure:
 - You are running 24/7 on a Hostinger VPS (187.77.27.231), managed by pm2.
@@ -343,6 +346,8 @@ async function executeTool(toolName, toolInput, userId) {
       );
     case "process_transcript":
       return await transcript.processTranscript(toolInput);
+    case "file_meeting_notes":
+      return await meetingNotes.fileMeetingNotes(toolInput);
     // --- Team tools ---
     case "team_search_drive":
       return await driveTeam.teamSearchDrive(
@@ -740,6 +745,32 @@ async function runAutoTriage() {
     }
   } catch (err) {
     console.error("[Auto-Triage] Error:", err.message);
+  }
+
+  // --- Post-Triage: Check for meeting notes ---
+  try {
+    const emailReports = await meetingNotes.checkRecentMeetingEmails();
+    const geminiReports = await meetingNotes.checkGeminiNotes();
+    const allReports = [...emailReports, ...geminiReports];
+
+    if (allReports.length > 0) {
+      console.log(`[Meeting Notes] ${allReports.length} new meeting notes found.`);
+      const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+      const history = getHistory(OWNER_USER_ID);
+
+      for (const report of allReports) {
+        const msg = meetingNotes.buildNotificationMessage(report);
+        await app.client.chat.postMessage({
+          channel: dmChannel.channel.id,
+          text: msg,
+        });
+        // Add to conversation history so the agent has context when Greg replies
+        history.push({ role: "assistant", content: msg });
+        trimHistory(history);
+      }
+    }
+  } catch (err) {
+    console.error("[Meeting Notes] Post-triage check error:", err.message);
   }
 }
 
