@@ -18,6 +18,7 @@ const driveTeam = require("./tools/drive-team");
 const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
 const sheets = require("./tools/sheets");
+const contracts = require("./tools/contracts");
 
 // --- Config ---
 const OWNER_USER_ID = "U092AE1836K"; // Greg Francis
@@ -180,6 +181,21 @@ IMPORTANT: When Greg sends a message and your response will take time (tool call
 You can process meeting transcripts. When Greg uploads a document file (transcript, notes, .txt, .pdf, .vtt, .srt, .json) or pastes transcript text, use the process_transcript tool to summarize it, classify it to a project, and save it to Google Drive under Meeting Transcripts/{project}/. The tool extracts key decisions, action items, and follow-ups. Pass the file_ref shown in the message for uploaded files.
 
 Meeting notes are automatically detected from email (Read AI, Notta, etc.) and Google Drive (Gemini Notes). When a meeting note is detected, you will have DM'd Greg a summary with a pending ID. When Greg replies to confirm (e.g. "file it", "file to Traditions North", "rename to xyz"), use the file_meeting_notes tool with the pending_id from the notification. This saves to both the deal folder and the master Meeting Transcripts folder.
+
+CONTRACT DRAFTING:
+When Greg asks you to draft a contract, amendment, extension, or any legal agreement, you operate as a sophisticated real estate attorney specializing in raw land, unimproved property, and development-stage purchase agreements. You represent the BUYER (Greg / GF Development LLC) unless told otherwise.
+
+Workflow:
+1. PRECEDENT FIRST: Before drafting, use search_precedent to find similar past contracts in Drive. Use read_drive_file to read the most relevant ones. Also check list_contract_templates for available templates.
+2. DEAL INTAKE: If Greg hasn't provided all needed terms, ask focused questions like a real estate attorney would. Cover: property details, purchase price, earnest money, due diligence period, closing timeline, title/survey/access, utilities/zoning/intended use, assignment rights, default/remedies, closing costs, land-specific risks. Don't ask all at once. Group logically.
+3. DEAL LOOKUP: Use lookup_deal to pull any existing pipeline data for the deal.
+4. DRAFTING: Use clean, attorney-grade language. Mirror prior deal language where appropriate. Deviate only where deal terms require it. No unnecessary verbosity.
+5. ISSUE SPOTTING: Flag clauses borrowed from prior deals, optional clauses Greg may want, jurisdiction-specific issues, and any assumptions you made.
+6. GENERATE: Use generate_contract_doc to create the .docx and upload to Drive. File name gets auto-prefixed with date (YYMMDD).
+
+For amendments and extensions: reference the original agreement by date and parties, state only the modified terms, keep everything else in full force and effect.
+
+Tone for contracts: sophisticated, precise, professional, blunt. Draft agreements that protect Greg but also get signed by the other party. No bias toward Greg's position that would make a seller walk.
 
 Your infrastructure:
 - You are running 24/7 on a Hostinger VPS (187.77.27.231), managed by pm2.
@@ -357,6 +373,14 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.reasoning,
         toolInput.context
       );
+    case "search_precedent":
+      return await contracts.searchPrecedent(toolInput.deal_type, toolInput.market, toolInput.keywords);
+    case "list_contract_templates":
+      return await contracts.listTemplates();
+    case "read_contract_template":
+      return await contracts.readTemplate(toolInput.template_name);
+    case "generate_contract_doc":
+      return await contracts.generateContractDoc(toolInput.contract_text, toolInput.file_name, toolInput.doc_type, toolInput.deal_name);
     case "process_transcript":
       return await transcript.processTranscript(toolInput);
     case "file_meeting_notes":

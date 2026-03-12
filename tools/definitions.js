@@ -592,6 +592,82 @@ const OWNER_TOOLS = [
       required: ["decision", "reasoning", "context"],
     },
   },
+  // --- Contract Drafting Tools ---
+  {
+    name: "search_precedent",
+    description:
+      "Search Google Drive for similar past contracts, agreements, and amendments. Use BEFORE drafting any contract to find relevant precedent. Searches by deal type, market, and keywords across all deal folders.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_type: {
+          type: "string",
+          description: "Type of contract to find: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money",
+        },
+        market: {
+          type: "string",
+          description: "Market/state to search: Idaho, Nevada, Washington, Oregon, California",
+        },
+        keywords: {
+          type: "string",
+          description: "Additional search keywords (property name, party name, etc)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "list_contract_templates",
+    description:
+      "List available contract templates in the template library. Templates are pre-built starting points for common contract types.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "read_contract_template",
+    description:
+      "Read a specific contract template from the template library. Use after list_contract_templates to get the full template content.",
+    input_schema: {
+      type: "object",
+      properties: {
+        template_name: {
+          type: "string",
+          description: "Template name (without .md extension)",
+        },
+      },
+      required: ["template_name"],
+    },
+  },
+  {
+    name: "generate_contract_doc",
+    description:
+      "Generate a professional .docx contract document and upload to Google Drive. Takes the full contract text (already drafted by you), converts to formatted Word doc with proper headers/footers/margins, and saves to Contracts/Drafts/ on Drive. Returns the Drive link. File name auto-prefixed with date (YYMMDD format).",
+    input_schema: {
+      type: "object",
+      properties: {
+        contract_text: {
+          type: "string",
+          description: "The full contract text to convert to .docx. Use proper formatting: UPPERCASE for section headers, numbered sections (1. , 1.1 ), signature lines as ___.",
+        },
+        file_name: {
+          type: "string",
+          description: "File name (without date prefix or .docx extension). E.g. 'Innes Property - Extension Amendment'",
+        },
+        doc_type: {
+          type: "string",
+          description: "Document type: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money",
+        },
+        deal_name: {
+          type: "string",
+          description: "Deal name for folder organization (e.g. 'George Innes', 'Sims'). Creates subfolder under Contracts/Drafts/.",
+        },
+      },
+      required: ["contract_text"],
+    },
+  },
 ];
 
 // Tools available to team members (search Drive, check availability, read project files, pipeline)
