@@ -10,7 +10,11 @@ const files = require("./tools/files");
 const learning = require("./tools/learning");
 const drive = require("./tools/drive");
 const pipeline = require("./tools/pipeline");
-const { OWNER_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
+const { OWNER_TOOLS, TEAM_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
+const permissions = require("./tools/permissions");
+const driveTeam = require("./tools/drive-team");
+const calendarFreebusy = require("./tools/calendar-freebusy");
+const usage = require("./tools/usage");
 
 // --- Config ---
 const OWNER_USER_ID = "U092AE1836K"; // Greg Francis
@@ -144,14 +148,38 @@ Top priorities:
 Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
 Greg's timezone: CST (Mexico).`;
 
-const TEAM_SYSTEM_PROMPT = `You are Claude EA, the AI assistant for GF Development LLC. You are speaking with a team member (not Greg).
+const TEAM_SYSTEM_PROMPT = `You are Claude EA, the AI assistant for GF Development LLC. You are the GFDev Brain: the team's search engine and knowledge base. You are speaking with a team member (not Greg).
 
 You are direct and helpful. 2-3 sentences max unless detail is requested. No emojis. No dashes.
 
-You can answer questions about GF Development, active projects, priorities, and company context. You can read project files to provide information.
+## What You Can Do
+- Search shared Google Drive folders for files, logos, letterheads, contracts, plats, docs
+- Check calendar availability (busy/free time blocks only, no event details)
+- Read project files (deal status, priorities, context docs, decision log)
+- Look up deal pipeline info and individual deal details
 
-You do NOT have access to Greg's email, calendar, or personal information. If someone asks you to send emails, check Greg's calendar, or access personal data, tell them you can only do that when Greg requests it directly.
+## What You Cannot Do
+- Access anyone's email (Gmail). Do not search, read, or send email for any reason.
+- See calendar event details (titles, descriptions, attendees). You can only see busy/free blocks.
+- Write or modify project files. Read only.
+- Make calendar changes, send messages, or take any action on Greg's behalf.
 
+If someone asks for something you can't do, say so plainly and suggest they ask Greg directly.
+
+## How to Format Search Results
+When returning results, always format for Slack:
+- Include clickable links using Slack format: <URL|Display Text>
+- Show file type and last modified date
+- Lead with a 1-2 sentence TLDR summary of what you found
+- Use bullet points. Keep results scannable, not a wall of text.
+- If nothing found, suggest alternative search terms.
+
+When showing calendar availability:
+- Show free time blocks as a list
+- Use human-readable times (e.g. "Tuesday 2:00 PM to 3:30 PM CST")
+- Note that Greg's timezone is CST (Mexico)
+
+## Company Context
 GF Development is a lean, principal-led land development company. Core strategy: acquire mispriced land, secure entitlements, engineer builder-ready lots, exit via phased takedown to national/regional homebuilders.
 
 Active markets: Idaho (Boise/Ada County), Nevada (Dayton/Reno), Washington (Spokane, Snohomish County).
@@ -159,17 +187,25 @@ Active markets: Idaho (Boise/Ada County), Nevada (Dayton/Reno), Washington (Spok
 Team:
 - Greg Francis: CEO, sole decision-maker on acquisitions, entitlements, project finance.
 - Rachel Rife: Project Manager. Coordination, timelines, vendor management.
-- Brian Chaplin: Acquisitions Manager. Currently managing 3 La Pine OR deals (Sims, Cumley, Forest).
+- Brian Chaplin: Acquisitions Manager. Currently managing La Pine OR deals (Sims, Cumley, Forest, Tomi Coffer).
 - Marwan Mousa: Lead Manager. Inbound/outbound pipeline.
 
 Top priorities:
 1. Cash flow. Get La Pine OR deals listed and into escrow.
 2. Traditions North and Brio Vista are the primary long-term value plays.
 
-Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
+Greg's timezone: CST (Mexico).`;
 
 // --- Tool Execution ---
-async function executeTool(toolName, toolInput) {
+async function executeTool(toolName, toolInput, userId) {
+  // Track usage for team members
+  if (userId && permissions.isTeamOrAbove(userId) && !permissions.isOwner(userId)) {
+    usage.trackUsage(userId, toolName).catch((err) =>
+      console.error("[Usage] Track error:", err.message)
+    );
+  }
+
   switch (toolName) {
     case "search_emails":
       return await gmail.searchEmails(toolInput.query, toolInput.max_results);
@@ -255,6 +291,29 @@ async function executeTool(toolName, toolInput) {
         toolInput.reasoning,
         toolInput.context
       );
+    // --- Team tools ---
+    case "team_search_drive":
+      return await driveTeam.teamSearchDrive(
+        toolInput.query,
+        toolInput.max_results,
+        permissions.getTeamDriveFolders()
+      );
+    case "team_list_drive_folder":
+      return await driveTeam.teamListFolder(
+        toolInput.folder_id,
+        toolInput.max_results,
+        permissions.getTeamDriveFolders()
+      );
+    case "team_read_drive_file":
+      return await driveTeam.teamReadFile(
+        toolInput.file_id,
+        permissions.getTeamDriveFolders()
+      );
+    case "check_freebusy":
+      return await calendarFreebusy.checkFreeBusy(
+        toolInput.start_date,
+        toolInput.end_date
+      );
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -291,7 +350,7 @@ async function runAgent(userId, messages, systemPrompt, tools) {
       if (block.type === "tool_use") {
         console.log(`[Tool] ${block.name}:`, JSON.stringify(block.input));
         try {
-          const result = await executeTool(block.name, block.input);
+          const result = await executeTool(block.name, block.input, userId);
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
@@ -366,18 +425,20 @@ app.message(async ({ message, say }) => {
 
   if (!text) return;
 
-  const isOwner = userId === OWNER_USER_ID;
-  const systemPrompt = isOwner ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
-  const tools = isOwner ? OWNER_TOOLS : PUBLIC_TOOLS;
+  const tier = permissions.getUserTier(userId);
+  const systemPrompt = tier === "owner" ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
+  const tools = tier === "owner" ? OWNER_TOOLS : tier === "team" ? TEAM_TOOLS : PUBLIC_TOOLS;
 
   const history = getHistory(userId);
   history.push({ role: "user", content: text });
   trimHistory(history);
 
   try {
-    // Send immediate acknowledgment so Greg knows we're working
-    if (isOwner) {
+    // Send immediate acknowledgment so nobody waits with no response
+    if (tier === "owner") {
       await say("Got it, working on it...");
+    } else if (tier === "team") {
+      await say("Checking, one moment...");
     }
 
     // Set a 60-second status update timer
@@ -419,17 +480,19 @@ app.event("app_mention", async ({ event, say }) => {
   const text = event.text.replace(/<@[A-Z0-9]+>/g, "").trim();
   if (!text) return;
 
-  const isOwner = userId === OWNER_USER_ID;
-  const systemPrompt = isOwner ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
-  const tools = isOwner ? OWNER_TOOLS : PUBLIC_TOOLS;
+  const tier = permissions.getUserTier(userId);
+  const systemPrompt = tier === "owner" ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
+  const tools = tier === "owner" ? OWNER_TOOLS : tier === "team" ? TEAM_TOOLS : PUBLIC_TOOLS;
 
   const history = getHistory(userId);
   history.push({ role: "user", content: text });
   trimHistory(history);
 
   try {
-    if (isOwner) {
+    if (tier === "owner") {
       await say("Got it, working on it...");
+    } else if (tier === "team") {
+      await say("Checking, one moment...");
     }
 
     const statusTimer = setTimeout(async () => {
@@ -787,7 +850,21 @@ async function runDailyBackup() {
   await app.start();
   console.log("Claude EA is online in Slack.");
   console.log(`Owner: ${OWNER_USER_ID} (full access)`);
-  console.log("All other users: chat only (no email/calendar access)");
+  const teamMembers = Object.entries(permissions.TEAM_CONFIG)
+    .filter(([, cfg]) => cfg.tier === "team")
+    .map(([id, cfg]) => `${cfg.name} (${id})`);
+  if (teamMembers.length > 0) {
+    console.log(`Team members: ${teamMembers.join(", ")} (Drive search, freebusy, project files)`);
+  } else {
+    console.log("No team members configured yet. Add Slack user IDs to tools/permissions.js.");
+  }
+  const driveFolders = permissions.getTeamDriveFolders();
+  if (driveFolders.length > 0) {
+    console.log(`Team Drive folders whitelisted: ${driveFolders.length}`);
+  } else {
+    console.log("No team Drive folders configured. Set TEAM_DRIVE_FOLDERS in .env.");
+  }
+  console.log("Public users: chat only (no tool access)");
 
   // Run initial triage on startup
   setTimeout(async () => {

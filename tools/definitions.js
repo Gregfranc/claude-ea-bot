@@ -450,6 +450,141 @@ const OWNER_TOOLS = [
   },
 ];
 
+// Tools available to team members (search Drive, check availability, read project files, pipeline)
+// NO email access, NO writing, NO calendar details
+const TEAM_TOOLS = [
+  {
+    name: "team_search_drive",
+    description:
+      "Search shared project files in Google Drive. Returns matching file names, links, types, and last modified dates. Only searches within shared project folders.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search term (file name or content to find)",
+        },
+        max_results: {
+          type: "number",
+          description: "Maximum results to return (default 10)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "team_list_drive_folder",
+    description:
+      "List files in a shared project folder on Google Drive. Use team_search_drive first to find folder IDs.",
+    input_schema: {
+      type: "object",
+      properties: {
+        folder_id: {
+          type: "string",
+          description: "Google Drive folder ID to list",
+        },
+        max_results: {
+          type: "number",
+          description: "Maximum files to list (default 25)",
+        },
+      },
+      required: ["folder_id"],
+    },
+  },
+  {
+    name: "team_read_drive_file",
+    description:
+      "Read the contents of a file from shared project folders on Google Drive. Use team_search_drive first to find the file ID.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_id: {
+          type: "string",
+          description: "The Google Drive file ID to read",
+        },
+      },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "check_freebusy",
+    description:
+      "Check calendar availability for a date range. Returns busy/free time blocks only (no event titles, descriptions, or attendees). Use this to find open meeting times.",
+    input_schema: {
+      type: "object",
+      properties: {
+        start_date: {
+          type: "string",
+          description:
+            "Start date/time in ISO 8601 format (e.g. 2026-03-12T09:00:00)",
+        },
+        end_date: {
+          type: "string",
+          description:
+            "End date/time in ISO 8601 format (max 7 days from start)",
+        },
+      },
+      required: ["start_date", "end_date"],
+    },
+  },
+  {
+    name: "read_project_file",
+    description:
+      "Read a file from the EA project (context/, projects/, decisions/, templates/, references/).",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_path: {
+          type: "string",
+          description:
+            'Relative path from project root, e.g. "context/current-priorities.md"',
+        },
+      },
+      required: ["file_path"],
+    },
+  },
+  {
+    name: "list_project_files",
+    description: "List files in a project directory.",
+    input_schema: {
+      type: "object",
+      properties: {
+        directory: {
+          type: "string",
+          description:
+            'Directory to list, e.g. "projects/" or "context/"',
+        },
+      },
+      required: ["directory"],
+    },
+  },
+  {
+    name: "get_pipeline",
+    description:
+      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "lookup_deal",
+    description:
+      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: {
+          type: "string",
+          description: "Deal name or partial name to search for",
+        },
+      },
+      required: ["deal_name"],
+    },
+  },
+];
+
 // Tools available to all users (no sensitive data access)
 const PUBLIC_TOOLS = [
   {
@@ -507,4 +642,4 @@ const PUBLIC_TOOLS = [
   },
 ];
 
-module.exports = { OWNER_TOOLS, PUBLIC_TOOLS };
+module.exports = { OWNER_TOOLS, TEAM_TOOLS, PUBLIC_TOOLS };
