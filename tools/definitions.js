@@ -393,6 +393,42 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "get_pipeline",
+    description:
+      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "lookup_deal",
+    description:
+      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal name or partial name to search for" },
+      },
+      required: ["deal_name"],
+    },
+  },
+  {
+    name: "update_deal",
+    description:
+      "Update a field on a deal in the pipeline sheet. Use to change stage, dates, amounts, next actions, etc.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal name or partial match" },
+        field: { type: "string", description: "Column name to update (e.g. Stage, Close Date, Next Action, Notes)" },
+        value: { type: "string", description: "New value for the field" },
+      },
+      required: ["deal_name", "field", "value"],
+    },
+  },
+  {
     name: "log_decision",
     description:
       "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",
@@ -445,6 +481,28 @@ const PUBLIC_TOOLS = [
         },
       },
       required: ["directory"],
+    },
+  },
+  {
+    name: "get_pipeline",
+    description:
+      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "lookup_deal",
+    description:
+      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal name or partial name to search for" },
+      },
+      required: ["deal_name"],
     },
   },
 ];

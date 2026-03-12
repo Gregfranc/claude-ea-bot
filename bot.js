@@ -9,6 +9,7 @@ const calendar = require("./tools/calendar");
 const files = require("./tools/files");
 const learning = require("./tools/learning");
 const drive = require("./tools/drive");
+const pipeline = require("./tools/pipeline");
 const { OWNER_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
 
 // --- Config ---
@@ -242,6 +243,12 @@ async function executeTool(toolName, toolInput) {
       return await drive.listFolder(toolInput.folder_id, toolInput.max_results);
     case "backup_recovery_doc":
       return await drive.uploadRecoveryBackup();
+    case "get_pipeline":
+      return await pipeline.getPipelineSummary();
+    case "lookup_deal":
+      return await pipeline.lookupDeal(toolInput.deal_name);
+    case "update_deal":
+      return await pipeline.updateDeal(toolInput.deal_name, toolInput.field, toolInput.value);
     case "log_decision":
       return await files.appendToDecisionLog(
         toolInput.decision,
