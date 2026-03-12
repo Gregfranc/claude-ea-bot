@@ -1,3 +1,4 @@
+require("dotenv").config();
 const http = require("http");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
