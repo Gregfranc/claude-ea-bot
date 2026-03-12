@@ -358,6 +358,31 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "read_drive_file",
+    description:
+      "Read the contents of a file from Google Drive by its file ID. Use search_drive first to find the file ID. Works with Google Docs, Sheets (as CSV), text files, PDFs, and Word docs.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string", description: "The Google Drive file ID" },
+      },
+      required: ["file_id"],
+    },
+  },
+  {
+    name: "list_drive_folder",
+    description:
+      "List files in a Google Drive folder by folder ID. Use search_drive to find the folder ID first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        folder_id: { type: "string", description: "The Google Drive folder ID" },
+        max_results: { type: "number", description: "Maximum files to list (default 25)" },
+      },
+      required: ["folder_id"],
+    },
+  },
+  {
     name: "backup_recovery_doc",
     description:
       "Upload the latest recovery-doc.md to Google Drive in the Claude EA Backups folder. Runs automatically daily at 6am CST, but can be triggered manually.",

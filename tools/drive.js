@@ -115,6 +115,84 @@ async function uploadRecoveryBackup() {
   return { ...result, date: today, folder: "Claude EA Backups" };
 }
 
+// List files in a Drive folder
+async function listFolder(folderId, maxResults = 25) {
+  const drive = getDrive();
+  const q = `'${folderId}' in parents and trashed=false`;
+  const res = await drive.files.list({
+    q,
+    fields: "files(id, name, mimeType, modifiedTime, webViewLink)",
+    pageSize: maxResults,
+    orderBy: "modifiedTime desc",
+  });
+  return res.data.files || [];
+}
+
+// Read/download file content from Drive
+async function readFile(fileId) {
+  const drive = getDrive();
+
+  // Get file metadata first
+  const meta = await drive.files.get({
+    fileId,
+    fields: "id, name, mimeType, size",
+  });
+  const { name, mimeType } = meta.data;
+
+  // Google Workspace files need export
+  if (mimeType === "application/vnd.google-apps.document") {
+    const res = await drive.files.export(
+      { fileId, mimeType: "text/plain" },
+      { responseType: "text" }
+    );
+    return { name, mimeType, content: res.data };
+  }
+  if (mimeType === "application/vnd.google-apps.spreadsheet") {
+    const res = await drive.files.export(
+      { fileId, mimeType: "text/csv" },
+      { responseType: "text" }
+    );
+    return { name, mimeType, content: res.data };
+  }
+  if (mimeType === "application/vnd.google-apps.folder") {
+    const files = await listFolder(fileId);
+    return { name, mimeType, content: `Folder contents:\n${files.map((f) => `- ${f.name} (${f.mimeType})`).join("\n")}`, files };
+  }
+
+  // Binary files: download and try to extract text
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" }
+  );
+  const buffer = Buffer.from(res.data);
+
+  // PDF: try basic text extraction
+  if (mimeType === "application/pdf") {
+    // Return first 10K chars of raw text extraction attempt
+    const text = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/ {3,}/g, " ").trim();
+    if (text.length > 100) {
+      return { name, mimeType, content: text.substring(0, 10000), note: "Basic PDF text extraction. Some formatting may be lost." };
+    }
+    return { name, mimeType, content: "(PDF could not be read as text. It may be scanned/image-based.)", size: buffer.length };
+  }
+
+  // Text-based files
+  if (mimeType && (mimeType.startsWith("text/") || mimeType.includes("json") || mimeType.includes("xml"))) {
+    return { name, mimeType, content: buffer.toString("utf-8").substring(0, 10000) };
+  }
+
+  // Word docs: basic text extraction
+  if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    const text = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/ {3,}/g, " ").trim();
+    if (text.length > 100) {
+      return { name, mimeType, content: text.substring(0, 10000), note: "Basic .docx text extraction." };
+    }
+    return { name, mimeType, content: "(Could not extract text from .docx)", size: buffer.length };
+  }
+
+  return { name, mimeType, content: `(Binary file, ${buffer.length} bytes. Cannot display as text.)`, size: buffer.length };
+}
+
 // Search files in Drive
 async function searchFiles(query, maxResults = 10) {
   const drive = getDrive();
@@ -134,4 +212,6 @@ module.exports = {
   uploadFile,
   uploadRecoveryBackup,
   searchFiles,
+  readFile,
+  listFolder,
 };

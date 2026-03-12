@@ -236,6 +236,10 @@ async function executeTool(toolName, toolInput) {
       return await drive.searchFiles(toolInput.query, toolInput.max_results);
     case "create_drive_folder":
       return await drive.findOrCreateFolder(toolInput.folder_name, toolInput.parent_id);
+    case "read_drive_file":
+      return await drive.readFile(toolInput.file_id);
+    case "list_drive_folder":
+      return await drive.listFolder(toolInput.folder_id, toolInput.max_results);
     case "backup_recovery_doc":
       return await drive.uploadRecoveryBackup();
     case "log_decision":
