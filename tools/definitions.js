@@ -479,6 +479,100 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "read_spreadsheet",
+    description:
+      "Read data from a Google Sheet by URL or spreadsheet ID. Returns headers and rows as structured data. Accepts full Google Sheets URLs or just the spreadsheet ID.",
+    input_schema: {
+      type: "object",
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description:
+            "Google Sheets URL (e.g. https://docs.google.com/spreadsheets/d/abc123/edit) or spreadsheet ID",
+        },
+        range: {
+          type: "string",
+          description:
+            "Cell range to read (e.g. \"Sheet1!A1:F50\", \"Pipeline!A:Z\"). If omitted, reads entire first sheet.",
+        },
+      },
+      required: ["spreadsheet"],
+    },
+  },
+  {
+    name: "write_spreadsheet",
+    description:
+      "Write or update cells in a Google Sheet. Overwrites the specified range with the provided values. Use read_spreadsheet first to understand the sheet structure.",
+    input_schema: {
+      type: "object",
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description: "Google Sheets URL or spreadsheet ID",
+        },
+        range: {
+          type: "string",
+          description:
+            "Cell range to write to (e.g. \"Sheet1!A1:D5\", \"Pipeline!B3\")",
+        },
+        values: {
+          type: "array",
+          items: {
+            type: "array",
+            items: { type: "string" },
+          },
+          description:
+            "2D array of values to write. Each inner array is a row. Example: [[\"Name\",\"Status\"],[\"Deal1\",\"Active\"]]",
+        },
+      },
+      required: ["spreadsheet", "range", "values"],
+    },
+  },
+  {
+    name: "append_spreadsheet",
+    description:
+      "Append new rows to the end of a Google Sheet. Adds rows after the last row with data. Use for adding new entries without overwriting existing data.",
+    input_schema: {
+      type: "object",
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description: "Google Sheets URL or spreadsheet ID",
+        },
+        range: {
+          type: "string",
+          description:
+            "Sheet and column range to append to (e.g. \"Sheet1!A:Z\", \"Pipeline!A:L\")",
+        },
+        values: {
+          type: "array",
+          items: {
+            type: "array",
+            items: { type: "string" },
+          },
+          description:
+            "2D array of rows to append. Each inner array is a row.",
+        },
+      },
+      required: ["spreadsheet", "range", "values"],
+    },
+  },
+  {
+    name: "get_spreadsheet_info",
+    description:
+      "Get metadata about a Google Sheet: title, sheet/tab names, row and column counts. Use this to understand the structure before reading or writing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        spreadsheet: {
+          type: "string",
+          description: "Google Sheets URL or spreadsheet ID",
+        },
+      },
+      required: ["spreadsheet"],
+    },
+  },
+  {
     name: "log_decision",
     description:
       "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",

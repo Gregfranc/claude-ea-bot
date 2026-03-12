@@ -17,6 +17,7 @@ const meetingNotes = require("./tools/meeting-notes");
 const driveTeam = require("./tools/drive-team");
 const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
+const sheets = require("./tools/sheets");
 
 // --- Config ---
 const OWNER_USER_ID = "U092AE1836K"; // Greg Francis
@@ -338,6 +339,14 @@ async function executeTool(toolName, toolInput, userId) {
       return await pipeline.lookupDeal(toolInput.deal_name);
     case "update_deal":
       return await pipeline.updateDeal(toolInput.deal_name, toolInput.field, toolInput.value);
+    case "read_spreadsheet":
+      return await sheets.readSheet(toolInput.spreadsheet, toolInput.range);
+    case "write_spreadsheet":
+      return await sheets.writeSheet(toolInput.spreadsheet, toolInput.range, toolInput.values);
+    case "append_spreadsheet":
+      return await sheets.appendSheet(toolInput.spreadsheet, toolInput.range, toolInput.values);
+    case "get_spreadsheet_info":
+      return await sheets.getSpreadsheetInfo(toolInput.spreadsheet);
     case "log_decision":
       return await files.appendToDecisionLog(
         toolInput.decision,
