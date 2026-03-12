@@ -429,6 +429,33 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "process_transcript",
+    description:
+      "Process a meeting transcript: summarize key decisions, action items, and follow-ups, classify to a project/deal, and save both summary and original to Google Drive under Meeting Transcripts/{project}/. Use file_ref for uploaded Slack files, or transcript_text for pasted/Drive content.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_ref: {
+          type: "string",
+          description: "Reference ID from an uploaded file (shown in the message as 'File reference: ...')",
+        },
+        transcript_text: {
+          type: "string",
+          description: "Raw transcript text (use if no file_ref available, e.g. pasted text or Drive content)",
+        },
+        file_name: {
+          type: "string",
+          description: "Original file name (optional, used for naming saved files)",
+        },
+        source: {
+          type: "string",
+          description: "Recording source: Notta, Google Meet, Read AI, Zoom, Teams, or Other",
+        },
+      },
+      required: [],
+    },
+  },
+  {
     name: "log_decision",
     description:
       "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",

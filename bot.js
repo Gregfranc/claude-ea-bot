@@ -12,6 +12,7 @@ const drive = require("./tools/drive");
 const pipeline = require("./tools/pipeline");
 const { OWNER_TOOLS, TEAM_TOOLS, PUBLIC_TOOLS } = require("./tools/definitions");
 const permissions = require("./tools/permissions");
+const transcript = require("./tools/transcript");
 const driveTeam = require("./tools/drive-team");
 const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
@@ -36,6 +37,14 @@ const AUDIO_MIME_TYPES = [
   "audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav",
   "audio/x-m4a", "audio/mp3", "audio/aac", "audio/flac",
   "video/webm", "video/mp4", // Slack sometimes sends voice notes as video
+];
+
+const DOCUMENT_MIME_TYPES = [
+  "text/plain", "text/markdown", "text/vtt", "text/csv",
+  "application/json",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/x-subrip",
 ];
 
 const fs = require("fs");
@@ -106,6 +115,45 @@ async function transcribeAudio(fileUrl, fileName) {
   }
 }
 
+// --- Document Text Extraction ---
+function extractDocumentText(buffer, fileName) {
+  const ext = pathMod.extname(fileName || "").toLowerCase();
+
+  // VTT/SRT: strip timestamps for cleaner transcript
+  if (ext === ".vtt" || ext === ".srt") {
+    let text = buffer.toString("utf-8");
+    text = text.replace(/^WEBVTT\s*\n/, "");
+    text = text.replace(/^\d+\s*\n/gm, "");
+    text = text.replace(/[\d:.]+ --> [\d:.]+.*\n/g, "");
+    return text.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  // Text-based formats
+  if ([".txt", ".md", ".csv", ".json"].includes(ext)) {
+    return buffer.toString("utf-8");
+  }
+
+  // PDF: basic text extraction
+  if (ext === ".pdf") {
+    const text = buffer.toString("utf-8")
+      .replace(/[^\x20-\x7E\n\r\t]/g, " ")
+      .replace(/ {3,}/g, " ")
+      .trim();
+    return text.length > 100 ? text : null;
+  }
+
+  // DOCX: basic text extraction
+  if (ext === ".docx") {
+    const text = buffer.toString("utf-8")
+      .replace(/[^\x20-\x7E\n\r\t]/g, " ")
+      .replace(/ {3,}/g, " ")
+      .trim();
+    return text.length > 100 ? text : null;
+  }
+
+  return null;
+}
+
 // --- System Prompts ---
 const OWNER_SYSTEM_PROMPT = `You are Claude EA, the executive assistant and chief of staff for Greg Francis, CEO of GF Development LLC. You are speaking directly with Greg.
 
@@ -122,6 +170,8 @@ IMPORTANT Gmail search tips:
 When sending emails or making calendar changes, confirm the action with Greg before executing unless he explicitly tells you to just do it. Drafts are always safe to create without confirmation.
 
 IMPORTANT: When Greg sends a message and your response will take time (tool calls, research), immediately acknowledge with a brief "Got it" or similar before doing the work. Don't leave him waiting with no response.
+
+You can process meeting transcripts. When Greg uploads a document file (transcript, notes, .txt, .pdf, .vtt, .srt, .json) or pastes transcript text, use the process_transcript tool to summarize it, classify it to a project, and save it to Google Drive under Meeting Transcripts/{project}/. The tool extracts key decisions, action items, and follow-ups. Pass the file_ref shown in the message for uploaded files.
 
 Your infrastructure:
 - You are running 24/7 on a Hostinger VPS (187.77.27.231), managed by pm2.
@@ -291,6 +341,8 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.reasoning,
         toolInput.context
       );
+    case "process_transcript":
+      return await transcript.processTranscript(toolInput);
     // --- Team tools ---
     case "team_search_drive":
       return await driveTeam.teamSearchDrive(
@@ -410,17 +462,49 @@ app.message(async ({ message, say }) => {
       return;
     }
     await say("Transcribing voice note...");
-    const transcript = await transcribeAudio(
+    const transcription = await transcribeAudio(
       audioFile.url_private_download || audioFile.url_private,
       audioFile.name
     );
-    if (!transcript) {
+    if (!transcription) {
       await say("Could not transcribe that voice note. Try again or type your message.");
       return;
     }
     // If Greg sent text with the voice note, prepend it
-    text = text ? `${text}\n\n[Voice note transcription]: ${transcript}` : transcript;
-    await say(`*Transcribed:* ${transcript}`);
+    text = text ? `${text}\n\n[Voice note transcription]: ${transcription}` : transcription;
+    await say(`*Transcribed:* ${transcription}`);
+  }
+
+  // Check for document files (transcripts, notes, meeting exports)
+  if (!audioFile) {
+    const docFile = (message.files || []).find((f) => {
+      const ext = pathMod.extname(f.name || "").toLowerCase();
+      return DOCUMENT_MIME_TYPES.some((mime) => (f.mimetype || "").startsWith(mime)) ||
+        [".txt", ".md", ".pdf", ".docx", ".json", ".vtt", ".srt", ".csv"].includes(ext);
+    });
+
+    if (docFile) {
+      try {
+        console.log(`[Document] Downloading ${docFile.name} (${docFile.mimetype})...`);
+        const buffer = await downloadSlackFile(
+          docFile.url_private_download || docFile.url_private,
+          process.env.SLACK_BOT_TOKEN
+        );
+        const extractedText = extractDocumentText(buffer, docFile.name);
+        if (extractedText && extractedText.length > 50) {
+          const fileRef = transcript.storeUploadedFile(extractedText, docFile.name, docFile.mimetype);
+          const sizeKB = (extractedText.length / 1024).toFixed(1);
+          text = text
+            ? `${text}\n\n[Uploaded document: ${docFile.name} (${sizeKB} KB text extracted). File reference: ${fileRef}. Use process_transcript tool to summarize and file this transcript.]`
+            : `[Uploaded document: ${docFile.name} (${sizeKB} KB text extracted). File reference: ${fileRef}. Use process_transcript tool to summarize and file this transcript.]`;
+          console.log(`[Document] Extracted ${extractedText.length} chars from ${docFile.name}, ref: ${fileRef}`);
+        } else {
+          console.log(`[Document] Could not extract usable text from ${docFile.name}`);
+        }
+      } catch (err) {
+        console.error("[Document] Extraction error:", err.message);
+      }
+    }
   }
 
   if (!text) return;
