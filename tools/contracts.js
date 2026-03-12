@@ -41,39 +41,37 @@ async function readTemplate(templateName) {
 async function searchPrecedent(dealType, market, keywords) {
   const results = [];
 
-  // Search by deal type
-  if (dealType) {
-    const typeQuery = `name contains '${dealType}' and (mimeType='application/pdf' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType='application/vnd.google-apps.document') and trashed=false`;
-    try {
-      const files = await drive.searchFiles(typeQuery, 10);
-      results.push(...files.map((f) => ({ ...f, matchType: "deal_type" })));
-    } catch {}
-  }
+  // Simple searches - Drive API is finicky with complex OR queries
+  const searches = [];
 
-  // Search by market
-  if (market) {
-    const marketQuery = `name contains '${market}' and (mimeType='application/pdf' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType='application/vnd.google-apps.document') and trashed=false`;
-    try {
-      const files = await drive.searchFiles(marketQuery, 10);
-      results.push(...files.map((f) => ({ ...f, matchType: "market" })));
-    } catch {}
-  }
-
-  // Search by keywords
   if (keywords) {
-    const kwQuery = `fullText contains '${keywords}' and (mimeType='application/pdf' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType='application/vnd.google-apps.document') and trashed=false`;
-    try {
-      const files = await drive.searchFiles(kwQuery, 10);
-      results.push(...files.map((f) => ({ ...f, matchType: "keywords" })));
-    } catch {}
+    searches.push({ q: `name contains '${keywords.replace(/'/g, "\\'")}' and trashed=false`, tag: "keywords" });
   }
+  if (dealType) {
+    searches.push({ q: `name contains '${dealType.replace(/'/g, "\\'")}' and trashed=false`, tag: "deal_type" });
+  }
+  if (market) {
+    searches.push({ q: `name contains '${market.replace(/'/g, "\\'")}' and trashed=false`, tag: "market" });
+  }
+  // General contract search
+  searches.push({ q: `name contains 'contract' and trashed=false`, tag: "general" });
+  searches.push({ q: `name contains 'agreement' and trashed=false`, tag: "general" });
+  searches.push({ q: `name contains 'amendment' and trashed=false`, tag: "general" });
 
-  // Also search for "contract", "agreement", "amendment", "purchase" in general
-  const generalQuery = `(name contains 'contract' or name contains 'agreement' or name contains 'amendment' or name contains 'purchase') and (mimeType='application/pdf' or mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document' or mimeType='application/vnd.google-apps.document') and trashed=false`;
-  try {
-    const files = await drive.searchFiles(generalQuery, 15);
-    results.push(...files.map((f) => ({ ...f, matchType: "general" })));
-  } catch {}
+  for (const { q, tag } of searches) {
+    try {
+      const files = await drive.searchFiles(q, 10);
+      // Filter to document types client-side
+      const docs = files.filter((f) =>
+        f.mimeType === "application/pdf" ||
+        f.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        f.mimeType === "application/vnd.google-apps.document"
+      );
+      results.push(...docs.map((f) => ({ ...f, matchType: tag })));
+    } catch (err) {
+      console.error(`[Precedent] Search failed (${tag}): ${err.message}`);
+    }
+  }
 
   // Deduplicate by file ID
   const seen = new Set();
