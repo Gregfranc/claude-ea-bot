@@ -60,7 +60,7 @@ async function searchPrecedent(dealType, market, keywords) {
 
   for (const { q, tag } of searches) {
     try {
-      const files = await drive.searchFiles(q, 10);
+      const files = await drive.searchFiles(q, 5);
       // Filter to document types client-side
       const docs = files.filter((f) =>
         f.mimeType === "application/pdf" ||

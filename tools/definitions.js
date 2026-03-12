@@ -4,8 +4,7 @@
 const OWNER_TOOLS = [
   {
     name: "search_emails",
-    description:
-      "Search Gmail for emails matching a query. Supports Gmail search syntax (from:, to:, subject:, has:attachment, newer_than:, etc).",
+    description: "Search Gmail. Supports Gmail search syntax.",
     input_schema: {
       type: "object",
       properties: {
@@ -24,8 +23,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "read_email",
-    description:
-      "Read the full content of a specific email by its message ID. Use search_emails first to find the ID.",
+    description: "Read full email content by message ID.",
     input_schema: {
       type: "object",
       properties: {
@@ -39,8 +37,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "create_draft",
-    description:
-      "Create a Gmail draft (does not send). Greg can review and send manually.",
+    description: "Create Gmail draft (does not send).",
     input_schema: {
       type: "object",
       properties: {
@@ -53,8 +50,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "send_email",
-    description:
-      "Send an email immediately from Greg's Gmail. Use with caution. Prefer create_draft unless Greg explicitly says to send.",
+    description: "Send email immediately. Prefer create_draft unless Greg says to send.",
     input_schema: {
       type: "object",
       properties: {
@@ -67,8 +63,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "reply_to_email",
-    description:
-      "Reply to an existing email thread. Sends immediately. Maintains thread context.",
+    description: "Reply to email thread. Sends immediately.",
     input_schema: {
       type: "object",
       properties: {
@@ -83,8 +78,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "list_calendar_events",
-    description:
-      "List upcoming calendar events. Shows events for the specified number of days ahead.",
+    description: "List upcoming calendar events.",
     input_schema: {
       type: "object",
       properties: {
@@ -98,8 +92,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "create_calendar_event",
-    description:
-      "Create a new Google Calendar event. Times should be in ISO 8601 format.",
+    description: "Create calendar event. ISO 8601 times.",
     input_schema: {
       type: "object",
       properties: {
@@ -133,8 +126,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "update_calendar_event",
-    description:
-      "Update an existing calendar event. Use list_calendar_events first to find the event ID.",
+    description: "Update calendar event by ID.",
     input_schema: {
       type: "object",
       properties: {
@@ -176,15 +168,13 @@ const OWNER_TOOLS = [
   },
   {
     name: "read_project_file",
-    description:
-      "Read a file from the EA project (context/, projects/, decisions/, templates/, references/).",
+    description: "Read a file from the EA project.",
     input_schema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description:
-            'Relative path from project root, e.g. "context/current-priorities.md"',
+          description: 'Relative path, e.g. "context/current-priorities.md"',
         },
       },
       required: ["file_path"],
@@ -192,8 +182,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "write_project_file",
-    description:
-      "Write or update a file in the EA project. Use for updating priorities, project status, etc.",
+    description: "Write/update a project file.",
     input_schema: {
       type: "object",
       properties: {
@@ -226,8 +215,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "triage_inbox",
-    description:
-      "Run email triage on Greg's inbox. Scans recent emails, classifies them as EA/Action, EA/FYI, or EA/Noise, and applies Gmail labels. Returns a summary.",
+    description: "Run email triage on inbox.",
     input_schema: {
       type: "object",
       properties: {
@@ -241,8 +229,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "apply_email_label",
-    description:
-      "Apply a Gmail label to a specific email. Use to reclassify emails (e.g., move from EA/Noise to EA/Action).",
+    description: "Apply a Gmail label to an email.",
     input_schema: {
       type: "object",
       properties: {
@@ -260,8 +247,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "list_labels",
-    description:
-      "List all Gmail labels in Greg's account. Use this to see the full label inventory for cleanup or organization.",
+    description: "List all Gmail labels.",
     input_schema: {
       type: "object",
       properties: {},
@@ -270,8 +256,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "remove_email_label",
-    description:
-      "Remove a Gmail label from a specific email. Use to reclassify or clean up label assignments.",
+    description: "Remove a Gmail label from an email.",
     input_schema: {
       type: "object",
       properties: {
@@ -289,103 +274,90 @@ const OWNER_TOOLS = [
   },
   {
     name: "delete_label",
-    description:
-      "Permanently delete a Gmail label. Does not delete the emails, just removes the label. Use for label cleanup.",
+    description: "Delete a Gmail label. Emails are kept.",
     input_schema: {
       type: "object",
       properties: {
-        label_name: {
-          type: "string",
-          description: "The label name to delete",
-        },
+        label_name: { type: "string", description: "Label name to delete" },
       },
       required: ["label_name"],
     },
   },
   {
     name: "learn_from_inbox",
-    description:
-      "Learn from Greg's email behavior. Checks recently starred/important emails to detect corrections to triage rules. Promotes or demotes senders based on patterns. Run this to update the triage profile based on how Greg interacts with his inbox.",
+    description: "Update triage profile from Greg's recent starring/labeling.",
     input_schema: {
       type: "object",
       properties: {
-        hours_back: {
-          type: "number",
-          description: "How many hours back to scan for Greg's email actions (default 2)",
-        },
+        hours_back: { type: "number", description: "Hours back to scan (default 2)" },
       },
       required: [],
     },
   },
   {
     name: "upload_to_drive",
-    description:
-      "Upload a file to Google Drive. Creates a new file or updates an existing one with the same name in the specified folder.",
+    description: "Upload file to Google Drive. Updates if same name exists.",
     input_schema: {
       type: "object",
       properties: {
-        file_name: { type: "string", description: "Name for the file in Drive" },
-        content: { type: "string", description: "File content to upload" },
-        mime_type: { type: "string", description: 'MIME type (default "text/markdown")' },
-        folder_id: { type: "string", description: "Google Drive folder ID to upload into (optional)" },
+        file_name: { type: "string", description: "File name in Drive" },
+        content: { type: "string", description: "File content" },
+        mime_type: { type: "string", description: "MIME type (default text/markdown)" },
+        folder_id: { type: "string", description: "Target folder ID (optional)" },
       },
       required: ["file_name", "content"],
     },
   },
   {
     name: "search_drive",
-    description:
-      "Search Google Drive for files by name or content. Returns file names, IDs, and links.",
+    description: "Search Google Drive files by name/content.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Drive search query (e.g. \"name contains \'recovery\'\")" },
-        max_results: { type: "number", description: "Maximum results to return (default 10)" },
+        query: { type: "string", description: "Drive search query" },
+        max_results: { type: "number", description: "Max results (default 10)" },
       },
       required: ["query"],
     },
   },
   {
     name: "create_drive_folder",
-    description: "Find or create a Google Drive folder by name.",
+    description: "Find or create a Drive folder.",
     input_schema: {
       type: "object",
       properties: {
         folder_name: { type: "string", description: "Folder name" },
-        parent_id: { type: "string", description: "Parent folder ID (optional, defaults to root)" },
+        parent_id: { type: "string", description: "Parent folder ID (optional)" },
       },
       required: ["folder_name"],
     },
   },
   {
     name: "read_drive_file",
-    description:
-      "Read the contents of a file from Google Drive by its file ID. Use search_drive first to find the file ID. Works with Google Docs, Sheets (as CSV), text files, PDFs, and Word docs.",
+    description: "Read file from Drive by ID. Works with Docs, Sheets, PDFs, Word.",
     input_schema: {
       type: "object",
       properties: {
-        file_id: { type: "string", description: "The Google Drive file ID" },
+        file_id: { type: "string", description: "Drive file ID" },
       },
       required: ["file_id"],
     },
   },
   {
     name: "list_drive_folder",
-    description:
-      "List files in a Google Drive folder by folder ID. Use search_drive to find the folder ID first.",
+    description: "List files in a Drive folder by ID.",
     input_schema: {
       type: "object",
       properties: {
-        folder_id: { type: "string", description: "The Google Drive folder ID" },
-        max_results: { type: "number", description: "Maximum files to list (default 25)" },
+        folder_id: { type: "string", description: "Drive folder ID" },
+        max_results: { type: "number", description: "Max files (default 25)" },
       },
       required: ["folder_id"],
     },
   },
   {
     name: "backup_recovery_doc",
-    description:
-      "Upload the latest recovery-doc.md to Google Drive in the Claude EA Backups folder. Runs automatically daily at 6am CST, but can be triggered manually.",
+    description: "Upload recovery-doc.md to Drive backups folder.",
     input_schema: {
       type: "object",
       properties: {},
@@ -394,8 +366,7 @@ const OWNER_TOOLS = [
   },
   {
     name: "get_pipeline",
-    description:
-      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    description: "Get deal pipeline summary: all deals by stage with dates and revenue.",
     input_schema: {
       type: "object",
       properties: {},
@@ -404,125 +375,79 @@ const OWNER_TOOLS = [
   },
   {
     name: "lookup_deal",
-    description:
-      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    description: "Look up a deal by name. Fuzzy match.",
     input_schema: {
       type: "object",
       properties: {
-        deal_name: { type: "string", description: "Deal name or partial name to search for" },
+        deal_name: { type: "string", description: "Deal name or partial match" },
       },
       required: ["deal_name"],
     },
   },
   {
     name: "update_deal",
-    description:
-      "Update a field on a deal in the pipeline sheet. Use to change stage, dates, amounts, next actions, etc.",
+    description: "Update a deal field in the pipeline sheet.",
     input_schema: {
       type: "object",
       properties: {
         deal_name: { type: "string", description: "Deal name or partial match" },
-        field: { type: "string", description: "Column name to update (e.g. Stage, Close Date, Next Action, Notes)" },
-        value: { type: "string", description: "New value for the field" },
+        field: { type: "string", description: "Column name (e.g. Stage, Close Date, Next Action)" },
+        value: { type: "string", description: "New value" },
       },
       required: ["deal_name", "field", "value"],
     },
   },
   {
     name: "process_transcript",
-    description:
-      "Process a meeting transcript: summarize key decisions, action items, and follow-ups, classify to a project/deal, and save both summary and original to Google Drive under Meeting Transcripts/{project}/. Use file_ref for uploaded Slack files, or transcript_text for pasted/Drive content.",
+    description: "Process meeting transcript: summarize, classify, save to Drive.",
     input_schema: {
       type: "object",
       properties: {
-        file_ref: {
-          type: "string",
-          description: "Reference ID from an uploaded file (shown in the message as 'File reference: ...')",
-        },
-        transcript_text: {
-          type: "string",
-          description: "Raw transcript text (use if no file_ref available, e.g. pasted text or Drive content)",
-        },
-        file_name: {
-          type: "string",
-          description: "Original file name (optional, used for naming saved files)",
-        },
-        source: {
-          type: "string",
-          description: "Recording source: Notta, Google Meet, Read AI, Zoom, Teams, or Other",
-        },
+        file_ref: { type: "string", description: "Uploaded file reference ID" },
+        transcript_text: { type: "string", description: "Raw transcript text (if no file_ref)" },
+        file_name: { type: "string", description: "Original file name (optional)" },
+        source: { type: "string", description: "Source: Notta, Google Meet, Read AI, Zoom, Teams, Other" },
       },
       required: [],
     },
   },
   {
     name: "file_meeting_notes",
-    description:
-      "File a detected meeting note/transcript to Google Drive after Greg confirms. Saves to both the deal folder (under Meeting Notes & Transcripts/) and the master Meeting Transcripts/ folder. Use the pending_id from the meeting note notification.",
+    description: "File confirmed meeting notes to Drive deal folder + master folder.",
     input_schema: {
       type: "object",
       properties: {
-        pending_id: {
-          type: "string",
-          description: "The pending meeting ID from the notification (e.g. mtg-1234567890-abcd)",
-        },
-        project: {
-          type: "string",
-          description: "Project to file under (optional, uses suggested project if not provided)",
-        },
-        file_name: {
-          type: "string",
-          description: "File name override in snake_case, no date prefix (optional, uses suggested name if not provided)",
-        },
+        pending_id: { type: "string", description: "Pending meeting ID from notification" },
+        project: { type: "string", description: "Project to file under (optional)" },
+        file_name: { type: "string", description: "File name override (optional)" },
       },
       required: ["pending_id"],
     },
   },
   {
     name: "read_spreadsheet",
-    description:
-      "Read data from a Google Sheet by URL or spreadsheet ID. Returns headers and rows as structured data. Accepts full Google Sheets URLs or just the spreadsheet ID.",
+    description: "Read Google Sheet data by URL or ID.",
     input_schema: {
       type: "object",
       properties: {
-        spreadsheet: {
-          type: "string",
-          description:
-            "Google Sheets URL (e.g. https://docs.google.com/spreadsheets/d/abc123/edit) or spreadsheet ID",
-        },
-        range: {
-          type: "string",
-          description:
-            "Cell range to read (e.g. \"Sheet1!A1:F50\", \"Pipeline!A:Z\"). If omitted, reads entire first sheet.",
-        },
+        spreadsheet: { type: "string", description: "Sheets URL or spreadsheet ID" },
+        range: { type: "string", description: "Cell range (e.g. Sheet1!A1:F50). Omit for full sheet." },
       },
       required: ["spreadsheet"],
     },
   },
   {
     name: "write_spreadsheet",
-    description:
-      "Write or update cells in a Google Sheet. Overwrites the specified range with the provided values. Use read_spreadsheet first to understand the sheet structure.",
+    description: "Write cells to a Google Sheet. Overwrites specified range.",
     input_schema: {
       type: "object",
       properties: {
-        spreadsheet: {
-          type: "string",
-          description: "Google Sheets URL or spreadsheet ID",
-        },
-        range: {
-          type: "string",
-          description:
-            "Cell range to write to (e.g. \"Sheet1!A1:D5\", \"Pipeline!B3\")",
-        },
+        spreadsheet: { type: "string", description: "Sheets URL or spreadsheet ID" },
+        range: { type: "string", description: "Cell range to write" },
         values: {
           type: "array",
-          items: {
-            type: "array",
-            items: { type: "string" },
-          },
-          description:
-            "2D array of values to write. Each inner array is a row. Example: [[\"Name\",\"Status\"],[\"Deal1\",\"Active\"]]",
+          items: { type: "array", items: { type: "string" } },
+          description: "2D array of values (rows)",
         },
       },
       required: ["spreadsheet", "range", "values"],
@@ -530,28 +455,16 @@ const OWNER_TOOLS = [
   },
   {
     name: "append_spreadsheet",
-    description:
-      "Append new rows to the end of a Google Sheet. Adds rows after the last row with data. Use for adding new entries without overwriting existing data.",
+    description: "Append rows to end of a Google Sheet.",
     input_schema: {
       type: "object",
       properties: {
-        spreadsheet: {
-          type: "string",
-          description: "Google Sheets URL or spreadsheet ID",
-        },
-        range: {
-          type: "string",
-          description:
-            "Sheet and column range to append to (e.g. \"Sheet1!A:Z\", \"Pipeline!A:L\")",
-        },
+        spreadsheet: { type: "string", description: "Sheets URL or spreadsheet ID" },
+        range: { type: "string", description: "Column range to append to" },
         values: {
           type: "array",
-          items: {
-            type: "array",
-            items: { type: "string" },
-          },
-          description:
-            "2D array of rows to append. Each inner array is a row.",
+          items: { type: "array", items: { type: "string" } },
+          description: "2D array of rows to append",
         },
       },
       required: ["spreadsheet", "range", "values"],
@@ -559,35 +472,24 @@ const OWNER_TOOLS = [
   },
   {
     name: "get_spreadsheet_info",
-    description:
-      "Get metadata about a Google Sheet: title, sheet/tab names, row and column counts. Use this to understand the structure before reading or writing.",
+    description: "Get Sheet metadata: title, tab names, dimensions.",
     input_schema: {
       type: "object",
       properties: {
-        spreadsheet: {
-          type: "string",
-          description: "Google Sheets URL or spreadsheet ID",
-        },
+        spreadsheet: { type: "string", description: "Sheets URL or spreadsheet ID" },
       },
       required: ["spreadsheet"],
     },
   },
   {
     name: "log_decision",
-    description:
-      "Append a decision to the decision log (decisions/log.md). Use when Greg makes a meaningful business or operational decision.",
+    description: "Log a business decision to decisions/log.md.",
     input_schema: {
       type: "object",
       properties: {
-        decision: {
-          type: "string",
-          description: "The decision that was made",
-        },
-        reasoning: { type: "string", description: "Why this decision was made" },
-        context: {
-          type: "string",
-          description: "Relevant context (deal, project, etc)",
-        },
+        decision: { type: "string", description: "The decision" },
+        reasoning: { type: "string", description: "Why" },
+        context: { type: "string", description: "Deal/project context" },
       },
       required: ["decision", "reasoning", "context"],
     },
@@ -595,31 +497,20 @@ const OWNER_TOOLS = [
   // --- Contract Drafting Tools ---
   {
     name: "search_precedent",
-    description:
-      "Search Google Drive for similar past contracts, agreements, and amendments. Use BEFORE drafting any contract to find relevant precedent. Searches by deal type, market, and keywords across all deal folders.",
+    description: "Search Drive for past contracts/amendments as precedent before drafting.",
     input_schema: {
       type: "object",
       properties: {
-        deal_type: {
-          type: "string",
-          description: "Type of contract to find: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money",
-        },
-        market: {
-          type: "string",
-          description: "Market/state to search: Idaho, Nevada, Washington, Oregon, California",
-        },
-        keywords: {
-          type: "string",
-          description: "Additional search keywords (property name, party name, etc)",
-        },
+        deal_type: { type: "string", description: "Type: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money" },
+        market: { type: "string", description: "Market: Idaho, Nevada, Washington, Oregon, California" },
+        keywords: { type: "string", description: "Search keywords (property/party name)" },
       },
       required: [],
     },
   },
   {
     name: "list_contract_templates",
-    description:
-      "List available contract templates in the template library. Templates are pre-built starting points for common contract types.",
+    description: "List available contract templates.",
     input_schema: {
       type: "object",
       properties: {},
@@ -628,137 +519,87 @@ const OWNER_TOOLS = [
   },
   {
     name: "read_contract_template",
-    description:
-      "Read a specific contract template from the template library. Use after list_contract_templates to get the full template content.",
+    description: "Read a contract template by name.",
     input_schema: {
       type: "object",
       properties: {
-        template_name: {
-          type: "string",
-          description: "Template name (without .md extension)",
-        },
+        template_name: { type: "string", description: "Template name (no .md extension)" },
       },
       required: ["template_name"],
     },
   },
   {
     name: "generate_contract_doc",
-    description:
-      "Generate a professional .docx contract document and upload to Google Drive. Takes the full contract text (already drafted by you), converts to formatted Word doc with proper headers/footers/margins, and saves to Contracts/Drafts/ on Drive. Returns the Drive link. File name auto-prefixed with date (YYMMDD format).",
+    description: "Generate .docx contract and upload to Drive. Date-prefixed filename.",
     input_schema: {
       type: "object",
       properties: {
-        contract_text: {
-          type: "string",
-          description: "The full contract text to convert to .docx. Use proper formatting: UPPERCASE for section headers, numbered sections (1. , 1.1 ), signature lines as ___.",
-        },
-        file_name: {
-          type: "string",
-          description: "File name (without date prefix or .docx extension). E.g. 'Innes Property - Extension Amendment'",
-        },
-        doc_type: {
-          type: "string",
-          description: "Document type: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money",
-        },
-        deal_name: {
-          type: "string",
-          description: "Deal name for folder organization (e.g. 'George Innes', 'Sims'). Creates subfolder under Contracts/Drafts/.",
-        },
+        contract_text: { type: "string", description: "Full contract text. UPPERCASE headers, numbered sections, ___ for signature lines." },
+        file_name: { type: "string", description: "File name (no date prefix or .docx)" },
+        doc_type: { type: "string", description: "Type: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money" },
+        deal_name: { type: "string", description: "Deal name for subfolder (optional)" },
       },
       required: ["contract_text"],
     },
   },
 ];
 
-// Tools available to team members (search Drive, check availability, read project files, pipeline)
-// NO email access, NO writing, NO calendar details
+// Team tools: Drive search, availability, project files, pipeline. No email/calendar details.
 const TEAM_TOOLS = [
   {
     name: "team_search_drive",
-    description:
-      "Search shared project files in Google Drive. Returns matching file names, links, types, and last modified dates. Only searches within shared project folders.",
+    description: "Search shared Drive files.",
     input_schema: {
       type: "object",
       properties: {
-        query: {
-          type: "string",
-          description: "Search term (file name or content to find)",
-        },
-        max_results: {
-          type: "number",
-          description: "Maximum results to return (default 10)",
-        },
+        query: { type: "string", description: "Search term" },
+        max_results: { type: "number", description: "Max results (default 10)" },
       },
       required: ["query"],
     },
   },
   {
     name: "team_list_drive_folder",
-    description:
-      "List files in a shared project folder on Google Drive. Use team_search_drive first to find folder IDs.",
+    description: "List files in a shared Drive folder.",
     input_schema: {
       type: "object",
       properties: {
-        folder_id: {
-          type: "string",
-          description: "Google Drive folder ID to list",
-        },
-        max_results: {
-          type: "number",
-          description: "Maximum files to list (default 25)",
-        },
+        folder_id: { type: "string", description: "Drive folder ID" },
+        max_results: { type: "number", description: "Max files (default 25)" },
       },
       required: ["folder_id"],
     },
   },
   {
     name: "team_read_drive_file",
-    description:
-      "Read the contents of a file from shared project folders on Google Drive. Use team_search_drive first to find the file ID.",
+    description: "Read a shared Drive file by ID.",
     input_schema: {
       type: "object",
       properties: {
-        file_id: {
-          type: "string",
-          description: "The Google Drive file ID to read",
-        },
+        file_id: { type: "string", description: "Drive file ID" },
       },
       required: ["file_id"],
     },
   },
   {
     name: "check_freebusy",
-    description:
-      "Check calendar availability for a date range. Returns busy/free time blocks only (no event titles, descriptions, or attendees). Use this to find open meeting times.",
+    description: "Check calendar availability. Returns busy/free blocks only.",
     input_schema: {
       type: "object",
       properties: {
-        start_date: {
-          type: "string",
-          description:
-            "Start date/time in ISO 8601 format (e.g. 2026-03-12T09:00:00)",
-        },
-        end_date: {
-          type: "string",
-          description:
-            "End date/time in ISO 8601 format (max 7 days from start)",
-        },
+        start_date: { type: "string", description: "Start ISO 8601 datetime" },
+        end_date: { type: "string", description: "End ISO 8601 datetime (max 7 days)" },
       },
       required: ["start_date", "end_date"],
     },
   },
   {
     name: "read_project_file",
-    description:
-      "Read a file from the EA project (context/, projects/, decisions/, templates/, references/).",
+    description: "Read a file from the EA project.",
     input_schema: {
       type: "object",
       properties: {
-        file_path: {
-          type: "string",
-          description:
-            'Relative path from project root, e.g. "context/current-priorities.md"',
-        },
+        file_path: { type: "string", description: "Relative path from project root" },
       },
       required: ["file_path"],
     },
@@ -769,19 +610,14 @@ const TEAM_TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        directory: {
-          type: "string",
-          description:
-            'Directory to list, e.g. "projects/" or "context/"',
-        },
+        directory: { type: "string", description: "Directory to list" },
       },
       required: ["directory"],
     },
   },
   {
     name: "get_pipeline",
-    description:
-      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    description: "Get deal pipeline summary.",
     input_schema: {
       type: "object",
       properties: {},
@@ -790,35 +626,26 @@ const TEAM_TOOLS = [
   },
   {
     name: "lookup_deal",
-    description:
-      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    description: "Look up a deal by name. Fuzzy match.",
     input_schema: {
       type: "object",
       properties: {
-        deal_name: {
-          type: "string",
-          description: "Deal name or partial name to search for",
-        },
+        deal_name: { type: "string", description: "Deal name or partial match" },
       },
       required: ["deal_name"],
     },
   },
 ];
 
-// Tools available to all users (no sensitive data access)
+// Public tools: no sensitive data access
 const PUBLIC_TOOLS = [
   {
     name: "read_project_file",
-    description:
-      "Read a file from the EA project (context/, projects/, decisions/, templates/, references/).",
+    description: "Read a file from the EA project.",
     input_schema: {
       type: "object",
       properties: {
-        file_path: {
-          type: "string",
-          description:
-            'Relative path from project root, e.g. "context/current-priorities.md"',
-        },
+        file_path: { type: "string", description: "Relative path from project root" },
       },
       required: ["file_path"],
     },
@@ -829,19 +656,14 @@ const PUBLIC_TOOLS = [
     input_schema: {
       type: "object",
       properties: {
-        directory: {
-          type: "string",
-          description:
-            'Directory to list, e.g. "projects/" or "context/"',
-        },
+        directory: { type: "string", description: "Directory to list" },
       },
       required: ["directory"],
     },
   },
   {
     name: "get_pipeline",
-    description:
-      "Get the full deal pipeline summary. Shows all active deals grouped by stage with key dates, projected revenue, and next actions.",
+    description: "Get deal pipeline summary.",
     input_schema: {
       type: "object",
       properties: {},
@@ -850,12 +672,11 @@ const PUBLIC_TOOLS = [
   },
   {
     name: "lookup_deal",
-    description:
-      "Look up a specific deal by name. Returns all details: stage, market, rep, purchase price, projected gross, contract date, feasibility date, close date, priority, next action, and notes. Fuzzy matches on deal name.",
+    description: "Look up a deal by name. Fuzzy match.",
     input_schema: {
       type: "object",
       properties: {
-        deal_name: { type: "string", description: "Deal name or partial name to search for" },
+        deal_name: { type: "string", description: "Deal name or partial match" },
       },
       required: ["deal_name"],
     },

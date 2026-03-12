@@ -173,7 +173,7 @@ async function readFile(fileId) {
       const data = await pdfParse(buffer);
       const text = data.text.trim();
       if (text.length > 50) {
-        return { name, mimeType, content: text.substring(0, 15000), pages: data.numpages, note: `Extracted ${data.numpages} pages.` };
+        return { name, mimeType, content: text.substring(0, 5000), pages: data.numpages, note: `Extracted ${data.numpages} pages (truncated to 5000 chars). Full text available if needed.` };
       }
       return { name, mimeType, content: "(PDF appears to be scanned/image-based with no extractable text.)", size: buffer.length, pages: data.numpages };
     } catch (err) {
