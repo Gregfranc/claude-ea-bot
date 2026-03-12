@@ -118,7 +118,7 @@ async function transcribeAudio(fileUrl, fileName) {
 }
 
 // --- Document Text Extraction ---
-function extractDocumentText(buffer, fileName) {
+async function extractDocumentText(buffer, fileName) {
   const ext = pathMod.extname(fileName || "").toLowerCase();
 
   // VTT/SRT: strip timestamps for cleaner transcript
@@ -135,13 +135,17 @@ function extractDocumentText(buffer, fileName) {
     return buffer.toString("utf-8");
   }
 
-  // PDF: basic text extraction
+  // PDF: proper text extraction using pdf-parse
   if (ext === ".pdf") {
-    const text = buffer.toString("utf-8")
-      .replace(/[^\x20-\x7E\n\r\t]/g, " ")
-      .replace(/ {3,}/g, " ")
-      .trim();
-    return text.length > 100 ? text : null;
+    try {
+      const pdfParse = require("pdf-parse");
+      const data = await pdfParse(buffer);
+      const text = data.text.trim();
+      return text.length > 50 ? text : null;
+    } catch (err) {
+      console.error("[Document] PDF parse error:", err.message);
+      return null;
+    }
   }
 
   // DOCX: basic text extraction
@@ -504,7 +508,7 @@ app.message(async ({ message, say }) => {
           docFile.url_private_download || docFile.url_private,
           process.env.SLACK_BOT_TOKEN
         );
-        const extractedText = extractDocumentText(buffer, docFile.name);
+        const extractedText = await extractDocumentText(buffer, docFile.name);
         if (extractedText && extractedText.length > 50) {
           const fileRef = transcript.storeUploadedFile(extractedText, docFile.name, docFile.mimetype);
           const sizeKB = (extractedText.length / 1024).toFixed(1);

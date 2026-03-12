@@ -1,6 +1,7 @@
 const { google } = require("googleapis");
 const path = require("path");
 const fs = require("fs").promises;
+const pdfParse = require("pdf-parse");
 
 function getAuth() {
   return new google.auth.OAuth2(
@@ -166,14 +167,18 @@ async function readFile(fileId) {
   );
   const buffer = Buffer.from(res.data);
 
-  // PDF: try basic text extraction
+  // PDF: proper text extraction using pdf-parse
   if (mimeType === "application/pdf") {
-    // Return first 10K chars of raw text extraction attempt
-    const text = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/ {3,}/g, " ").trim();
-    if (text.length > 100) {
-      return { name, mimeType, content: text.substring(0, 10000), note: "Basic PDF text extraction. Some formatting may be lost." };
+    try {
+      const data = await pdfParse(buffer);
+      const text = data.text.trim();
+      if (text.length > 50) {
+        return { name, mimeType, content: text.substring(0, 15000), pages: data.numpages, note: `Extracted ${data.numpages} pages.` };
+      }
+      return { name, mimeType, content: "(PDF appears to be scanned/image-based with no extractable text.)", size: buffer.length, pages: data.numpages };
+    } catch (err) {
+      return { name, mimeType, content: `(PDF parsing failed: ${err.message})`, size: buffer.length };
     }
-    return { name, mimeType, content: "(PDF could not be read as text. It may be scanned/image-based.)", size: buffer.length };
   }
 
   // Text-based files
