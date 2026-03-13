@@ -19,7 +19,18 @@ const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
 const sheets = require("./tools/sheets");
 const contracts = require("./tools/contracts");
-const rag = require("./tools/rag");
+let rag;
+try {
+  rag = require("./tools/rag");
+} catch (err) {
+  console.error("[RAG] Failed to load rag module:", err.message);
+  rag = {
+    search: async () => ({ error: "RAG module not loaded. Check that @pinecone-database/pinecone and @google/genai are installed." }),
+    syncDrive: async () => ({ error: "RAG module not loaded." }),
+    fullReindex: async () => ({ error: "RAG module not loaded." }),
+    getStats: async () => ({ error: "RAG module not loaded." }),
+  };
+}
 
 // --- Config ---
 const OWNER_USER_ID = "U092AE1836K"; // Greg Francis
