@@ -1115,8 +1115,8 @@ async function sendMeetingReviewReminder() {
 }
 
 // --- RAG Drive Sync Scheduler ---
-// Syncs Google Drive to Pinecone every 4 hours during daytime (6am-10pm CST)
-const RAG_SYNC_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+// Syncs Google Drive to Pinecone every hour during daytime (6am-10pm CST)
+const RAG_SYNC_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 const RAG_DAY_START = 6;
 const RAG_DAY_END = 22;
 let ragSyncTimer = null;
@@ -1139,7 +1139,7 @@ function scheduleNextRagSync() {
     await runRagSync();
     scheduleNextRagSync();
   }, RAG_SYNC_INTERVAL);
-  console.log(`[RAG] Next sync in 4 hours (CST hour: ${hour}).`);
+  console.log(`[RAG] Next sync in 1 hour (CST hour: ${hour}).`);
 }
 
 async function runRagSync() {
@@ -1195,7 +1195,7 @@ async function runRagSync() {
   // RAG Drive sync: every 4 hours during daytime
   if (process.env.PINECONE_API_KEY && process.env.GEMINI_API_KEY) {
     scheduleNextRagSync();
-    console.log("[RAG] Drive sync scheduled every 4 hours (6am-10pm CST).");
+    console.log("[RAG] Drive sync scheduled every 1 hour (6am-10pm CST).");
   } else {
     console.log("[RAG] Skipping Drive sync (PINECONE_API_KEY or GEMINI_API_KEY not set).");
   }

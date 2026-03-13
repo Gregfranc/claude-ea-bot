@@ -355,7 +355,7 @@ async function ingestFile(fileId, fileName, mimeType, webViewLink, folderPath, m
   return chunks.length;
 }
 
-// --- Search ---
+// --- Search (with freshness check) ---
 async function search(query, filters = {}, topK = MAX_RESULTS_DEFAULT) {
   const index = await getIndex();
   const queryEmbedding = await embedText(query);
@@ -392,19 +392,82 @@ async function search(query, filters = {}, topK = MAX_RESULTS_DEFAULT) {
     return { query, results: [], message: "No matching documents found." };
   }
 
+  // Freshness check: re-index any stale files before returning results
+  const staleReindexed = await refreshStaleResults(results.matches);
+
+  // If any files were re-indexed, re-run the query to get updated text
+  if (staleReindexed > 0) {
+    const freshResults = await index.query(queryParams);
+    if (freshResults.matches && freshResults.matches.length > 0) {
+      return {
+        query,
+        freshness_note: `${staleReindexed} file(s) were updated since last index and re-indexed on the fly.`,
+        results: freshResults.matches.map(formatMatch),
+      };
+    }
+  }
+
   return {
     query,
-    results: results.matches.map((match) => ({
-      text: match.metadata.text || "",
-      file_name: match.metadata.file_name,
-      deal: match.metadata.deal_name,
-      file_type: match.metadata.file_type,
-      folder: match.metadata.drive_folder_path,
-      link: match.metadata.web_view_link,
-      relevance: match.score?.toFixed(3),
-      chunk: `${(match.metadata.chunk_index || 0) + 1}/${match.metadata.total_chunks || "?"}`,
-    })),
+    results: results.matches.map(formatMatch),
   };
+}
+
+function formatMatch(match) {
+  return {
+    text: match.metadata.text || "",
+    file_name: match.metadata.file_name,
+    deal: match.metadata.deal_name,
+    file_type: match.metadata.file_type,
+    folder: match.metadata.drive_folder_path,
+    link: match.metadata.web_view_link,
+    relevance: match.score?.toFixed(3),
+    chunk: `${(match.metadata.chunk_index || 0) + 1}/${match.metadata.total_chunks || "?"}`,
+  };
+}
+
+// Check if any search results come from files that have been modified since indexing.
+// If so, re-index those files on the spot so the user gets fresh content.
+async function refreshStaleResults(matches) {
+  const driveApi = drive.getDrive();
+  const state = loadSyncState();
+  const checkedFiles = new Set();
+  let reindexed = 0;
+
+  for (const match of matches) {
+    const fileId = match.metadata.drive_file_id;
+    if (!fileId || checkedFiles.has(fileId)) continue;
+    checkedFiles.add(fileId);
+
+    const indexedModTime = match.metadata.modified_time;
+    if (!indexedModTime) continue;
+
+    try {
+      // Quick metadata-only call to check current modifiedTime
+      const meta = await driveApi.files.get({
+        fileId,
+        fields: "id, name, mimeType, modifiedTime, webViewLink, parents",
+      });
+      const currentModTime = meta.data.modifiedTime;
+
+      if (currentModTime && currentModTime !== indexedModTime) {
+        console.log(`[RAG] Stale file detected: ${meta.data.name} (indexed: ${indexedModTime}, current: ${currentModTime}). Re-indexing...`);
+        const parentId = (meta.data.parents && meta.data.parents[0]) || "";
+        const folderPath = state.indexed_files[fileId]?.folderPath || match.metadata.drive_folder_path || "";
+        const chunks = await ingestFile(fileId, meta.data.name, meta.data.mimeType, meta.data.webViewLink, folderPath, currentModTime, parentId);
+        if (chunks > 0) {
+          state.indexed_files[fileId] = { modifiedTime: currentModTime, chunks, name: meta.data.name };
+          saveSyncState(state);
+          reindexed++;
+        }
+      }
+    } catch (err) {
+      // File might have been deleted or permission revoked. Skip quietly.
+      console.error(`[RAG] Freshness check failed for ${fileId}: ${err.message}`);
+    }
+  }
+
+  return reindexed;
 }
 
 // --- Sync ---
