@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 
 // --- Config ---
-const EMBEDDING_MODEL = "gemini-embedding-exp-03-07";
+const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 3072;
 const PINECONE_INDEX_NAME = "gfdev-knowledge";
 const CHUNK_MAX_CHARS = 2000;
@@ -55,18 +55,24 @@ function getPinecone() {
 async function getIndex() {
   if (!pineconeIndex) {
     const pc = getPinecone();
-    // Check if index exists, create if not
     const indexes = await pc.listIndexes();
-    const exists = indexes.indexes?.some((idx) => idx.name === PINECONE_INDEX_NAME);
-    if (!exists) {
-      console.log(`[RAG] Creating Pinecone index "${PINECONE_INDEX_NAME}"...`);
+    const existing = indexes.indexes?.find((idx) => idx.name === PINECONE_INDEX_NAME);
+
+    // If index exists but wrong dimension, delete and recreate
+    if (existing && existing.dimension !== EMBEDDING_DIMENSIONS) {
+      console.log(`[RAG] Index has wrong dimensions (${existing.dimension} vs ${EMBEDDING_DIMENSIONS}). Deleting and recreating...`);
+      await pc.deleteIndex(PINECONE_INDEX_NAME);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+
+    if (!existing || existing.dimension !== EMBEDDING_DIMENSIONS) {
+      console.log(`[RAG] Creating Pinecone index "${PINECONE_INDEX_NAME}" (${EMBEDDING_DIMENSIONS} dims)...`);
       await pc.createIndex({
         name: PINECONE_INDEX_NAME,
         dimension: EMBEDDING_DIMENSIONS,
         metric: "cosine",
         spec: { serverless: { cloud: "aws", region: "us-east-1" } },
       });
-      // Wait for index to be ready
       console.log("[RAG] Waiting for index to initialize...");
       await new Promise((r) => setTimeout(r, 30000));
     }
