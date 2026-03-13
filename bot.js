@@ -346,6 +346,39 @@ function truncateResult(resultStr) {
   return resultStr.substring(0, MAX_TOOL_RESULT_CHARS) + '... [truncated, ' + resultStr.length + ' total chars]';
 }
 
+// Sonnet pricing per million tokens
+const TOKEN_COSTS = {
+  input: 3.0,
+  output: 15.0,
+  cache_write: 3.75,
+  cache_read: 0.30,
+};
+
+function calcCost(usage) {
+  const m = 1_000_000;
+  return (
+    ((usage.input_tokens || 0) * TOKEN_COSTS.input +
+      (usage.output_tokens || 0) * TOKEN_COSTS.output +
+      (usage.cache_creation_input_tokens || 0) * TOKEN_COSTS.cache_write +
+      (usage.cache_read_input_tokens || 0) * TOKEN_COSTS.cache_read) / m
+  );
+}
+
+function formatUsage(totals) {
+  const cached = totals.cache_read_input_tokens;
+  const totalIn = totals.input_tokens + totals.cache_creation_input_tokens + cached;
+  const cost = calcCost(totals);
+  const parts = [`${totals.api_calls} call${totals.api_calls === 1 ? "" : "s"}`];
+  if (cached > 0) {
+    parts.push(`${Math.round(totalIn / 1000)}K in (${Math.round(cached / 1000)}K cached)`);
+  } else {
+    parts.push(`${Math.round(totalIn / 1000)}K in`);
+  }
+  parts.push(`${Math.round(totals.output_tokens / 1000)}K out`);
+  parts.push(`$${cost.toFixed(3)}`);
+  return parts.join(", ");
+}
+
 async function runAgent(userId, messages, systemPrompt, tools) {
   const maxIterations = 10;
 
@@ -355,6 +388,8 @@ async function runAgent(userId, messages, systemPrompt, tools) {
   const cachedTools = tools.map((t, i) =>
     i === tools.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t
   );
+
+  const totals = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, api_calls: 0 };
 
   for (let i = 0; i < maxIterations; i++) {
     let response;
@@ -388,16 +423,28 @@ async function runAgent(userId, messages, systemPrompt, tools) {
       }
     }
 
+    // Accumulate token usage
+    if (response.usage) {
+      totals.input_tokens += response.usage.input_tokens || 0;
+      totals.output_tokens += response.usage.output_tokens || 0;
+      totals.cache_creation_input_tokens += response.usage.cache_creation_input_tokens || 0;
+      totals.cache_read_input_tokens += response.usage.cache_read_input_tokens || 0;
+      totals.api_calls++;
+    }
+
     // Collect text and tool use from response
     const assistantContent = response.content;
     messages.push({ role: "assistant", content: assistantContent });
 
-    // If no tool use, we're done. Extract text.
+    // If no tool use, we're done. Extract text + usage summary.
     if (response.stop_reason === "end_turn") {
       const textParts = assistantContent
         .filter((block) => block.type === "text")
         .map((block) => block.text);
-      return textParts.join("\n");
+      const reply = textParts.join("\n");
+      const usageLine = `\n\n_${formatUsage(totals)}_`;
+      console.log(`[Usage] ${formatUsage(totals)}`);
+      return reply + usageLine;
     }
 
     // Process tool calls
@@ -428,7 +475,9 @@ async function runAgent(userId, messages, systemPrompt, tools) {
     messages.push({ role: "user", content: toolResults });
   }
 
-  return "Hit the tool use limit. Try breaking your request into smaller pieces.";
+  const usageLine = `\n\n_${formatUsage(totals)}_`;
+  console.log(`[Usage] ${formatUsage(totals)}`);
+  return "Hit the tool use limit. Try breaking your request into smaller pieces." + usageLine;
 }
 
 // --- Conversation History ---
