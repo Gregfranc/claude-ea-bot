@@ -29,6 +29,16 @@ function getTier1Senders() {
   return [];
 }
 
+function getMixedSenders() {
+  if (learningModule) {
+    try {
+      const profile = learningModule.loadProfile();
+      return profile.mixed_senders || [];
+    } catch {}
+  }
+  return [];
+}
+
 function buildDealContext(dealLabels) {
   if (dealLabels.length === 0) return null;
   return dealLabels
@@ -40,8 +50,19 @@ function buildDealContext(dealLabels) {
 async function triageEmail(from, subject, snippet, body, threadIsReply) {
   const dealLabels = getDealLabels();
   const tier1Senders = getTier1Senders();
+  const mixedSenders = getMixedSenders();
   const dealContext = dealLabels.length > 0 ? buildDealContext(dealLabels) : "No active deals configured.";
   const vipList = tier1Senders.length > 0 ? tier1Senders.join(", ") : "none configured";
+
+  // Build mixed sender hints for this specific email
+  const fromLower = (from || "").toLowerCase();
+  let mixedHint = "";
+  for (const m of mixedSenders) {
+    if (fromLower.includes(m.sender)) {
+      mixedHint = `\nMIXED SENDER RULES for "${m.sender}":\n- STAR if: ${m.star_if}\n- NOISE if: ${m.noise_if}\nApply these rules carefully to this specific email.\n`;
+      break;
+    }
+  }
 
   const emailContent = [
     `From: ${from}`,
@@ -85,7 +106,7 @@ ${vipList}
 
 ACTIVE DEALS:
 ${dealContext}
-
+${mixedHint}
 EMAIL:
 ${emailContent}
 

@@ -294,10 +294,17 @@ function getActiveProfile() {
 }
 
 // Fast-path: detect obvious noise without AI
+// Mixed senders bypass this check and always go to AI classification
 function isObviousNoise(from, subject) {
   const profile = getActiveProfile();
   const fromLower = (from || "").toLowerCase();
   const subjectLower = (subject || "").toLowerCase();
+
+  // Check if sender is mixed (sends both important and junk) - force AI path
+  const mixedSenders = profile.mixed_senders || [];
+  for (const m of mixedSenders) {
+    if (fromLower.includes(m.sender)) return false;
+  }
 
   for (const s of profile.noise_senders) {
     if (fromLower.includes(s)) return true;
