@@ -117,9 +117,10 @@ function saveSyncState(state) {
 const EMBED_DELAY_MS = 700;
 let lastEmbedTime = 0;
 
-async function rateLimitedEmbed(text, retries = 3) {
+async function rateLimitedEmbed(text) {
   const ai = getGemini();
-  for (let attempt = 0; attempt < retries; attempt++) {
+  // Unlimited retries on rate limits. It will always eventually succeed.
+  while (true) {
     // Enforce minimum delay between calls
     const now = Date.now();
     const elapsed = now - lastEmbedTime;
@@ -138,17 +139,16 @@ async function rateLimitedEmbed(text, retries = 3) {
     } catch (err) {
       const msg = err.message || "";
       if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-        // Parse retry delay from error, default 60s
+        // Parse retry delay from error, default 65s
         const retryMatch = msg.match(/retryDelay.*?(\d+)s/i) || msg.match(/retry in (\d+)/i);
-        const waitSec = retryMatch ? parseInt(retryMatch[1]) + 5 : 60;
-        console.log(`[RAG] Rate limited. Waiting ${waitSec}s before retry ${attempt + 1}/${retries}...`);
+        const waitSec = retryMatch ? parseInt(retryMatch[1]) + 5 : 65;
+        console.log(`[RAG] Rate limited. Waiting ${waitSec}s...`);
         await new Promise((r) => setTimeout(r, waitSec * 1000));
         continue;
       }
-      throw err; // Non-rate-limit error, don't retry
+      throw err; // Non-rate-limit error, propagate
     }
   }
-  throw new Error("Rate limit retries exhausted");
 }
 
 // --- Embedding ---
