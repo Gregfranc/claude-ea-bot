@@ -574,6 +574,15 @@ const OWNER_TOOLS = [
       required: ["deal_name"],
     },
   },
+  // --- Drive Watcher ---
+  {
+    name: "drive_deal_snapshot",
+    description: "Show all deal folders organized by status (In Contract, Negotiating, Closed, Lost) from Google Drive. Use when Greg asks about all deals, deal pipeline status, or what's in each status folder.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
   // --- Knowledge Base (RAG) Tools ---
   {
     name: "search_knowledge_base",

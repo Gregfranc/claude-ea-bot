@@ -20,6 +20,7 @@ const usage = require("./tools/usage");
 const sheets = require("./tools/sheets");
 const contracts = require("./tools/contracts");
 const dealBrief = require("./tools/deal-brief");
+const driveWatcher = require("./tools/drive-watcher");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -341,6 +342,17 @@ async function executeTool(toolName, toolInput, userId) {
       return await dealBrief.getDealBrief(toolInput.deal_name, toolInput.days_back || 7);
     case "team_deal_brief":
       return await dealBrief.getTeamDealBrief(toolInput.deal_name);
+    case "drive_deal_snapshot": {
+      const snapshot = driveWatcher.getSnapshot();
+      if (snapshot.error) return snapshot.error;
+      let out = `*Deal Folders by Status* (last scan: ${snapshot.lastScan})\n`;
+      for (const [status, deals] of Object.entries(snapshot.byStatus)) {
+        out += `\n*${status}* (${deals.length}):\n`;
+        deals.sort().forEach((d) => { out += `  ${d}\n`; });
+      }
+      out += `\nTotal: ${snapshot.totalDeals} deal folders`;
+      return out;
+    }
     // --- Knowledge Base (RAG) tools ---
     case "search_knowledge_base": {
       const isTeam = !permissions.isOwner(userId);
@@ -1210,6 +1222,55 @@ async function runDealDigest() {
   }
 }
 
+// --- Drive Folder Watcher ---
+// Polls deal status folders every 30 min during daytime, detects moves, cascades updates.
+const DRIVE_WATCHER_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const DRIVE_WATCHER_DAY_START = 6;
+const DRIVE_WATCHER_DAY_END = 22;
+let driveWatcherTimer = null;
+
+function scheduleNextDriveWatch() {
+  if (driveWatcherTimer) clearTimeout(driveWatcherTimer);
+  const hour = getCSTHour();
+
+  if (hour < DRIVE_WATCHER_DAY_START || hour >= DRIVE_WATCHER_DAY_END) {
+    const hoursUntilMorning = hour >= DRIVE_WATCHER_DAY_END
+      ? (24 - hour + DRIVE_WATCHER_DAY_START)
+      : (DRIVE_WATCHER_DAY_START - hour);
+    driveWatcherTimer = setTimeout(async () => {
+      await runDriveWatch();
+      scheduleNextDriveWatch();
+    }, hoursUntilMorning * 60 * 60 * 1000);
+    console.log(`[DriveWatcher] Next scan in ${hoursUntilMorning} hours (waiting for daytime).`);
+    return;
+  }
+
+  driveWatcherTimer = setTimeout(async () => {
+    await runDriveWatch();
+    scheduleNextDriveWatch();
+  }, DRIVE_WATCHER_INTERVAL);
+  console.log(`[DriveWatcher] Next scan in 30 minutes (CST hour: ${hour}).`);
+}
+
+async function runDriveWatch() {
+  try {
+    const sendDM = async (msg) => {
+      const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+      await app.client.chat.postMessage({ channel: dmChannel.channel.id, text: msg });
+    };
+
+    const results = await driveWatcher.runWatcher(sendDM);
+
+    if (results.firstRun) {
+      console.log(`[DriveWatcher] Baseline captured: ${results.dealsFound} deal folders.`);
+    } else if (results.changes && results.changes.length > 0) {
+      console.log(`[DriveWatcher] ${results.changes.length} change(s) processed.`);
+    }
+  } catch (err) {
+    console.error("[DriveWatcher] Fatal error:", err.message);
+  }
+}
+
 // Syncs Google Drive to Pinecone every hour during daytime (6am-10pm CST)
 const RAG_SYNC_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 const RAG_DAY_START = 6;
@@ -1289,6 +1350,14 @@ async function runRagSync() {
 
   scheduleNextDealDigest();
   console.log("[DealDigest] Daily deal digest scheduled at 6:15am CST.");
+
+  // Run initial Drive watcher scan on startup (after 15s to let other things init)
+  setTimeout(async () => {
+    console.log("[DriveWatcher] Running initial scan...");
+    await runDriveWatch();
+  }, 15000);
+  scheduleNextDriveWatch();
+  console.log("[DriveWatcher] Drive folder watcher active (every 30 min, 6am-10pm CST).");
 
   // RAG Drive sync: every 4 hours during daytime
   if (process.env.PINECONE_API_KEY && process.env.GEMINI_API_KEY) {
