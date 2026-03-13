@@ -322,11 +322,11 @@ const OWNER_TOOLS = [
   },
   {
     name: "search_drive",
-    description: "Search Google Drive files by name/content.",
+    description: "Search Google Drive files by name or content. Pass plain keywords like 'Inness purchase agreement'. Handles spelling variations and fuzzy matching automatically.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Drive search query" },
+        query: { type: "string", description: "Plain text search terms (e.g. 'Inness contract', 'Cumley easement'). Do NOT use Drive query syntax." },
         max_results: { type: "number", description: "Max results (default 10)" },
       },
       required: ["query"],

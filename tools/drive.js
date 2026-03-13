@@ -198,15 +198,101 @@ async function readFile(fileId) {
   return { name, mimeType, content: `(Binary file, ${buffer.length} bytes. Cannot display as text.)`, size: buffer.length };
 }
 
-// Search files in Drive
+// Search files in Drive — accepts plain text, builds proper Drive query
 async function searchFiles(query, maxResults = 10) {
   const drive = getDrive();
-  const res = await drive.files.list({
-    q: `${query} and trashed=false`,
-    fields: "files(id, name, mimeType, modifiedTime, webViewLink)",
+  const fields = "files(id, name, mimeType, modifiedTime, webViewLink)";
+
+  // If query already looks like Drive query syntax, use it raw
+  if (/\b(name|fullText|mimeType)\s+(contains|=|!=)/.test(query)) {
+    const res = await drive.files.list({
+      q: `${query} and trashed=false`,
+      fields,
+      pageSize: maxResults,
+    });
+    return res.data.files || [];
+  }
+
+  // Plain text search: try multiple strategies
+  const terms = query.trim().split(/\s+/).filter(Boolean);
+
+  // Strategy 1: name contains each term (AND)
+  const nameQuery = terms.map(t => `name contains '${t.replace(/'/g, "\\'")}'`).join(" and ");
+  let res = await drive.files.list({
+    q: `${nameQuery} and trashed=false`,
+    fields,
     pageSize: maxResults,
   });
-  return res.data.files || [];
+  if (res.data.files && res.data.files.length > 0) return res.data.files;
+
+  // Strategy 2: fullText contains all terms
+  const fullTextQuery = terms.map(t => `fullText contains '${t.replace(/'/g, "\\'")}'`).join(" and ");
+  res = await drive.files.list({
+    q: `${fullTextQuery} and trashed=false`,
+    fields,
+    pageSize: maxResults,
+  });
+  if (res.data.files && res.data.files.length > 0) return res.data.files;
+
+  // Strategy 3: if multi-word, try each word individually in name (OR)
+  if (terms.length > 1) {
+    for (const term of terms) {
+      if (term.length < 3) continue; // skip short words like "or", "the"
+      res = await drive.files.list({
+        q: `name contains '${term.replace(/'/g, "\\'")}' and trashed=false`,
+        fields,
+        pageSize: maxResults,
+      });
+      if (res.data.files && res.data.files.length > 0) return res.data.files;
+    }
+  }
+
+  // Strategy 4: try common spelling variations (drop double letters, swap common confusions)
+  const variations = generateSpellingVariations(terms[0] || query);
+  for (const variant of variations) {
+    res = await drive.files.list({
+      q: `name contains '${variant.replace(/'/g, "\\'")}' and trashed=false`,
+      fields,
+      pageSize: maxResults,
+    });
+    if (res.data.files && res.data.files.length > 0) return res.data.files;
+  }
+
+  return [];
+}
+
+// Generate common spelling variations for fuzzy matching
+function generateSpellingVariations(word) {
+  if (!word || word.length < 3) return [];
+  const variations = new Set();
+  const lower = word.toLowerCase();
+
+  // Double/single letter swaps: inness <-> iness <-> innes
+  for (let i = 0; i < lower.length - 1; i++) {
+    if (lower[i] === lower[i + 1]) {
+      // Remove one doubled letter
+      variations.add(lower.slice(0, i) + lower.slice(i + 1));
+    }
+    // Add a doubled letter
+    variations.add(lower.slice(0, i + 1) + lower[i] + lower.slice(i + 1));
+  }
+
+  // Common vowel swaps
+  const vowelSwaps = { a: "e", e: ["a", "i"], i: ["e", "y"], o: "u", u: "o", y: "i" };
+  for (let i = 0; i < lower.length; i++) {
+    const swaps = vowelSwaps[lower[i]];
+    if (swaps) {
+      const arr = Array.isArray(swaps) ? swaps : [swaps];
+      for (const s of arr) {
+        variations.add(lower.slice(0, i) + s + lower.slice(i + 1));
+      }
+    }
+  }
+
+  // Remove the original word
+  variations.delete(lower);
+  // Limit to 5 variations to avoid excessive API calls
+  return Array.from(variations).slice(0, 5);
 }
 
 module.exports = {
