@@ -19,6 +19,7 @@ const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
 const sheets = require("./tools/sheets");
 const contracts = require("./tools/contracts");
+const dealBrief = require("./tools/deal-brief");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -194,6 +195,8 @@ CONTRACT DRAFTING: You are a real estate attorney for raw land deals, representi
 6. generate_contract_doc to create .docx on Drive
 Amendments: reference original by date/parties, state only modified terms.
 
+Deal briefs: When Greg asks about a deal status, what's happening on a deal, or what needs to happen next, use deal_brief FIRST. It pulls recent emails, project files, pipeline sheet, calendar events, meeting notes, and knowledge base results into one comprehensive view. Present the results organized by section and highlight what changed recently and what needs attention next.
+
 Knowledge base: ALWAYS try search_knowledge_base FIRST when Greg asks about document contents, contract terms, deal history, meeting discussions, closing dates, feasibility dates, or anything that might be in Drive files. It semantically searches all indexed Google Drive documents and returns actual text from inside the files. Only fall back to search_drive + read_drive_file if the knowledge base returns no results. Cite sources with Drive links when returning results.
 
 Team: Rachel Rife (PM), Brian Chaplin (Acquisitions, La Pine OR deals), Marwan Mousa (Leads).
@@ -203,8 +206,10 @@ Today: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeri
 
 const TEAM_SYSTEM_PROMPT = `You are Claude EA, the GFDev Brain. Speaking with a team member (not Greg). Direct, helpful, 2-3 sentences max. No emojis. No dashes.
 
-Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline.
+Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline, get deal briefs (team_deal_brief).
 Cannot do: email access, calendar event details, write files, take actions on Greg's behalf. Say so plainly if asked.
+
+Deal briefs: When asked about a deal status, use team_deal_brief FIRST. It pulls project files, pipeline sheet, meeting notes, and knowledge base results into one view. Present the results organized and highlight what needs attention.
 
 Format: Slack links (<URL|Text>), bullet points, TLDR first. Calendar times in human-readable CST format.
 
@@ -331,6 +336,11 @@ async function executeTool(toolName, toolInput, userId) {
       return await meetingNotes.searchMeetingNotes(toolInput.query, permissions.isOwner(userId));
     case "backfill_meeting_notes":
       return await meetingNotes.backfillMeetingNotes((msg) => console.log(`[Backfill] ${msg}`));
+    // --- Deal Brief tools ---
+    case "deal_brief":
+      return await dealBrief.getDealBrief(toolInput.deal_name, toolInput.days_back || 7);
+    case "team_deal_brief":
+      return await dealBrief.getTeamDealBrief(toolInput.deal_name);
     // --- Knowledge Base (RAG) tools ---
     case "search_knowledge_base": {
       const isTeam = !permissions.isOwner(userId);
@@ -488,11 +498,17 @@ async function runAgent(userId, messages, systemPrompt, tools) {
         console.log(`[Tool] ${block.name}:`, JSON.stringify(block.input).substring(0, 200));
         try {
           const result = await executeTool(block.name, block.input, userId);
-          const resultStr = JSON.stringify(result);
+          const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+          // Deal briefs are compound results that need more space
+          const briefTools = ["deal_brief", "team_deal_brief"];
+          const limit = briefTools.includes(block.name) ? 8000 : MAX_TOOL_RESULT_CHARS;
+          const truncated = resultStr.length > limit
+            ? resultStr.substring(0, limit) + '... [truncated, ' + resultStr.length + ' total chars]'
+            : resultStr;
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
-            content: truncateResult(resultStr),
+            content: truncated,
           });
         } catch (err) {
           console.error(`[Tool Error] ${block.name}:`, err.message);
@@ -1126,6 +1142,74 @@ async function sendMeetingReviewReminder() {
 }
 
 // --- RAG Drive Sync Scheduler ---
+// --- Daily Deal Digest ---
+// Scans deal-labeled emails from last 26 hours, extracts key updates via Haiku,
+// appends to project README activity logs. Runs at 6:15am CST daily.
+const dealDigest = require("./tools/deal-digest");
+const DEAL_DIGEST_HOUR = 6; // 6am CST
+let dealDigestTimer = null;
+
+function getNextDealDigestTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  let daysToAdd = 0;
+  if (currentHour > DEAL_DIGEST_HOUR || (currentHour === DEAL_DIGEST_HOUR && currentMin >= 15)) {
+    daysToAdd = 1;
+  }
+
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(DEAL_DIGEST_HOUR, 15, 0, 0); // 6:15am CST
+  return target.getTime() - cst.getTime();
+}
+
+function scheduleNextDealDigest() {
+  if (dealDigestTimer) clearTimeout(dealDigestTimer);
+  const msUntil = getNextDealDigestTime();
+  dealDigestTimer = setTimeout(async () => {
+    await runDealDigest();
+    scheduleNextDealDigest();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[DealDigest] Next digest at ${DEAL_DIGEST_HOUR}:15 CST (in ${hoursUntil} hours).`);
+}
+
+async function runDealDigest() {
+  try {
+    console.log("[DealDigest] Running daily deal digest...");
+    const results = await dealDigest.runDailyDigest(26);
+
+    // DM Greg a summary if any deals were updated
+    if (results.dealsUpdated > 0) {
+      const updatedDeals = results.details
+        .filter((d) => d.status === "updated")
+        .map((d) => `  ${d.deal} (${d.project})`)
+        .join("\n");
+
+      try {
+        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+        await app.client.chat.postMessage({
+          channel: dmChannel.channel.id,
+          text: `*Daily Deal Digest*\n${results.dealsUpdated} deal${results.dealsUpdated > 1 ? "s" : ""} updated with new activity:\n${updatedDeals}\n\n${results.dealsProcessed} total deals scanned, ${results.dealsSkipped} had no new activity.`,
+        });
+      } catch (e) {
+        console.error("[DealDigest] Could not notify Greg:", e.message);
+      }
+    } else {
+      console.log("[DealDigest] No deals had notable updates today.");
+    }
+
+    if (results.errors.length > 0) {
+      console.error("[DealDigest] Errors:", JSON.stringify(results.errors));
+    }
+  } catch (err) {
+    console.error("[DealDigest] Fatal error:", err.message);
+  }
+}
+
 // Syncs Google Drive to Pinecone every hour during daytime (6am-10pm CST)
 const RAG_SYNC_INTERVAL = 1 * 60 * 60 * 1000; // 1 hour
 const RAG_DAY_START = 6;
@@ -1202,6 +1286,9 @@ async function runRagSync() {
 
   scheduleNextMeetingReview();
   console.log("[Meeting Notes] Daily review reminder scheduled at 9:05am CST.");
+
+  scheduleNextDealDigest();
+  console.log("[DealDigest] Daily deal digest scheduled at 6:15am CST.");
 
   // RAG Drive sync: every 4 hours during daytime
   if (process.env.PINECONE_API_KEY && process.env.GEMINI_API_KEY) {

@@ -561,6 +561,19 @@ const OWNER_TOOLS = [
       required: ["contract_text"],
     },
   },
+  // --- Deal Brief ---
+  {
+    name: "deal_brief",
+    description: "Get comprehensive deal status: recent emails, project file, pipeline sheet, calendar events, meeting notes, and knowledge base results in one view. Use when Greg asks about a deal status, what's happening with a deal, or what needs to happen next on a deal.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal name or keyword (e.g. 'Cumley', 'Forest', 'Sims', 'Traditions North', 'Tomi Coffer')" },
+        days_back: { type: "number", description: "How many days of email history to search (default 7)" },
+      },
+      required: ["deal_name"],
+    },
+  },
   // --- Knowledge Base (RAG) Tools ---
   {
     name: "search_knowledge_base",
@@ -694,6 +707,18 @@ const TEAM_TOOLS = [
       type: "object",
       properties: {
         deal_name: { type: "string", description: "Deal name or partial match" },
+      },
+      required: ["deal_name"],
+    },
+  },
+  // --- Deal Brief for Team ---
+  {
+    name: "team_deal_brief",
+    description: "Get deal status overview: project file, pipeline sheet, meeting notes, and knowledge base. Use when a team member asks about a deal status or what needs to happen next. Does not include email or calendar details.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal name or keyword (e.g. 'Cumley', 'Forest', 'Sims', 'Traditions North')" },
       },
       required: ["deal_name"],
     },
