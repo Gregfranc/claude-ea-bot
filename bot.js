@@ -51,6 +51,7 @@ const DOCUMENT_MIME_TYPES = [
 ];
 
 const fs = require("fs");
+const path = require("path");
 const os = require("os");
 const pathMod = require("path");
 
@@ -170,7 +171,7 @@ Gmail: search by name not email address. If no results, broaden the search autom
 
 Triage corrections: when Greg says a sender is "noise" or should be "starred" (e.g. "Upwork is noise", "brian star", "noise zoom"), you MUST call apply_triage_correction as your FIRST tool call. Do not just acknowledge it verbally. The correction is not saved unless the tool is called.
 
-Transcripts: when Greg uploads a document, use process_transcript with the file_ref. When he confirms a meeting note (e.g. "file it"), use file_meeting_notes with the pending_id.
+Transcripts: when Greg uploads a document, use process_transcript with the file_ref. Meeting notes are auto-detected and tracked in a Google Sheet tracker (no Slack notifications). Greg reviews and approves them in the sheet. When Greg asks about past meetings (e.g. "what did we discuss about drainage" or "find meeting notes with Knox"), use search_meeting_notes.
 
 CONTRACT DRAFTING: You are a real estate attorney for raw land deals, representing BUYER (GF Development LLC).
 1. search_precedent first, then check templates
@@ -312,8 +313,10 @@ async function executeTool(toolName, toolInput, userId) {
       return await contracts.generateContractDoc(toolInput.contract_text, toolInput.file_name, toolInput.doc_type, toolInput.deal_name);
     case "process_transcript":
       return await transcript.processTranscript(toolInput);
-    case "file_meeting_notes":
-      return await meetingNotes.fileMeetingNotes(toolInput);
+    case "search_meeting_notes":
+      return await meetingNotes.searchMeetingNotes(toolInput.query, permissions.isOwner(userId));
+    case "backfill_meeting_notes":
+      return await meetingNotes.backfillMeetingNotes((msg) => console.log(`[Backfill] ${msg}`));
     // --- Team tools ---
     case "team_search_drive":
       return await driveTeam.teamSearchDrive(
@@ -1009,6 +1012,79 @@ async function runDailyBackup() {
   }
 }
 
+// --- Daily Meeting Notes Review Reminder ---
+// DMs Greg once a day at 9am CST if there are pending meeting notes to review
+const MEETING_REVIEW_HOUR = 9; // 9am CST
+let meetingReviewTimer = null;
+
+function getNextMeetingReviewTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  let daysToAdd = 0;
+  if (currentHour > MEETING_REVIEW_HOUR || (currentHour === MEETING_REVIEW_HOUR && currentMin >= 5)) {
+    daysToAdd = 1;
+  }
+
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(MEETING_REVIEW_HOUR, 5, 0, 0);
+  return target.getTime() - cst.getTime();
+}
+
+function scheduleNextMeetingReview() {
+  if (meetingReviewTimer) clearTimeout(meetingReviewTimer);
+  const msUntil = getNextMeetingReviewTime();
+  meetingReviewTimer = setTimeout(async () => {
+    await sendMeetingReviewReminder();
+    scheduleNextMeetingReview();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[Meeting Notes] Next review reminder at ${MEETING_REVIEW_HOUR}:05 CST (in ${hoursUntil} hours).`);
+}
+
+async function sendMeetingReviewReminder() {
+  try {
+    const trackerUrl = meetingNotes.getTrackerUrl();
+    if (!trackerUrl) {
+      console.log("[Meeting Notes] No tracker sheet yet, skipping reminder.");
+      return;
+    }
+
+    // Check if there are any pending notes
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, "data/meeting-notes-config.json"), "utf-8"));
+    if (!config.spreadsheetId) return;
+
+    const sheetData = await sheets.readSheet(config.spreadsheetId);
+    if (!sheetData.data) return;
+
+    const pending = sheetData.data.filter((r) => r.Status === "Pending");
+    if (pending.length === 0) {
+      console.log("[Meeting Notes] No pending notes, skipping reminder.");
+      return;
+    }
+
+    const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+    let msg = `You have ${pending.length} meeting note${pending.length > 1 ? "s" : ""} to review.\n`;
+    for (const p of pending.slice(0, 5)) {
+      msg += `  ${p.Date || "?"} | ${p.Title || "Untitled"} | ${p["Suggested Project"] || "General"}\n`;
+    }
+    if (pending.length > 5) msg += `  ...and ${pending.length - 5} more\n`;
+    msg += `\nReview and approve: ${trackerUrl}`;
+
+    await app.client.chat.postMessage({
+      channel: dmChannel.channel.id,
+      text: msg,
+    });
+
+    console.log(`[Meeting Notes] Sent review reminder: ${pending.length} pending.`);
+  } catch (err) {
+    console.error("[Meeting Notes] Review reminder error:", err.message);
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -1045,4 +1121,7 @@ async function runDailyBackup() {
 
   scheduleNextBackup();
   console.log("[Backup] Daily recovery doc backup scheduled at 6:05am CST.");
+
+  scheduleNextMeetingReview();
+  console.log("[Meeting Notes] Daily review reminder scheduled at 9:05am CST.");
 })();

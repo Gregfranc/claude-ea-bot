@@ -154,10 +154,33 @@ async function appendSheet(urlOrId, range, values) {
   };
 }
 
+// Create a new spreadsheet, returns { spreadsheetId, url }
+async function createSpreadsheet(title, headers) {
+  const sheets = getSheets();
+  const res = await sheets.spreadsheets.create({
+    resource: {
+      properties: { title },
+      sheets: [
+        {
+          properties: { title: "Sheet1" },
+          data: headers
+            ? [{ startRow: 0, startColumn: 0, rowData: [{ values: headers.map((h) => ({ userEnteredValue: { stringValue: h } })) }] }]
+            : undefined,
+        },
+      ],
+    },
+  });
+  return {
+    spreadsheetId: res.data.spreadsheetId,
+    url: `https://docs.google.com/spreadsheets/d/${res.data.spreadsheetId}/edit`,
+  };
+}
+
 module.exports = {
   parseSpreadsheetId,
   getSpreadsheetInfo,
   readSheet,
   writeSheet,
   appendSheet,
+  createSpreadsheet,
 };

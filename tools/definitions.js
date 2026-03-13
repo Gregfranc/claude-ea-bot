@@ -424,16 +424,23 @@ const OWNER_TOOLS = [
     },
   },
   {
-    name: "file_meeting_notes",
-    description: "File confirmed meeting notes to Drive deal folder + master folder.",
+    name: "search_meeting_notes",
+    description: "Search past meeting notes by keyword. Searches titles, summaries, projects, dates.",
     input_schema: {
       type: "object",
       properties: {
-        pending_id: { type: "string", description: "Pending meeting ID from notification" },
-        project: { type: "string", description: "Project to file under (optional)" },
-        file_name: { type: "string", description: "File name override (optional)" },
+        query: { type: "string", description: "Search terms (e.g. 'drainage', 'Knox', 'Traditions North', '2026-03')" },
       },
-      required: ["pending_id"],
+      required: ["query"],
+    },
+  },
+  {
+    name: "backfill_meeting_notes",
+    description: "One-time scan: process 6 months of meeting report emails + all Gemini Notes from Drive into the tracker sheet. Takes several minutes.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
     },
   },
   {
@@ -558,6 +565,17 @@ const OWNER_TOOLS = [
 
 // Team tools: Drive search, availability, project files, pipeline. No email/calendar details.
 const TEAM_TOOLS = [
+  {
+    name: "search_meeting_notes",
+    description: "Search past meeting notes by keyword. Only shows notes marked as Public.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search terms (e.g. 'drainage', 'deal review')" },
+      },
+      required: ["query"],
+    },
+  },
   {
     name: "team_search_drive",
     description: "Search shared Drive files.",
