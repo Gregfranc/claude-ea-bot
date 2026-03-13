@@ -14,6 +14,8 @@
     "googleapis": "^171.4.0",
     "open": "^11.0.0",
     "openai": "^4.104.0",
+    "@pinecone-database/pinecone": "^4.0.0",
+    "@google/genai": "^1.0.0",
     "pdf-parse": "^2.4.5"
   }
 }

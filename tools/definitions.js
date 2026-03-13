@@ -561,6 +561,39 @@ const OWNER_TOOLS = [
       required: ["contract_text"],
     },
   },
+  // --- Knowledge Base (RAG) Tools ---
+  {
+    name: "search_knowledge_base",
+    description: "Search all indexed Google Drive documents (contracts, meeting notes, plats, engineering docs, county letters, spreadsheets). Use when Greg asks about deal details, contract terms, meeting discussions, historical decisions, or anything that might be in Drive files. Returns relevant passages with source links.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Natural language search query" },
+        deal_filter: { type: "string", description: "Filter by deal name (e.g. 'Traditions North', 'Cumley'). Optional." },
+        file_type_filter: { type: "string", description: "Filter by type: contract, meeting-note, plat, letter, financial, spreadsheet, other. Optional." },
+        max_results: { type: "number", description: "Number of results (default 5, max 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "rag_sync_status",
+    description: "Check knowledge base sync status: indexed files, last sync time, errors.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "rag_reindex",
+    description: "Force full re-index of all Google Drive files into the knowledge base. Takes several minutes to hours depending on Drive size.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // Team tools: Drive search, availability, project files, pipeline. No email/calendar details.
@@ -663,6 +696,20 @@ const TEAM_TOOLS = [
         deal_name: { type: "string", description: "Deal name or partial match" },
       },
       required: ["deal_name"],
+    },
+  },
+  // --- Knowledge Base (RAG) for Team ---
+  {
+    name: "search_knowledge_base",
+    description: "Search indexed shared documents. Returns relevant passages from contracts, meeting notes, and project files with source links.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Natural language search query" },
+        deal_filter: { type: "string", description: "Filter by deal name (optional)" },
+        max_results: { type: "number", description: "Number of results (default 5)" },
+      },
+      required: ["query"],
     },
   },
 ];

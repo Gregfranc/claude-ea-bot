@@ -19,6 +19,7 @@ const calendarFreebusy = require("./tools/calendar-freebusy");
 const usage = require("./tools/usage");
 const sheets = require("./tools/sheets");
 const contracts = require("./tools/contracts");
+const rag = require("./tools/rag");
 
 // --- Config ---
 const OWNER_USER_ID = "U092AE1836K"; // Greg Francis
@@ -182,6 +183,8 @@ CONTRACT DRAFTING: You are a real estate attorney for raw land deals, representi
 6. generate_contract_doc to create .docx on Drive
 Amendments: reference original by date/parties, state only modified terms.
 
+Knowledge base: use search_knowledge_base when Greg asks about document contents, contract terms, deal history, meeting discussions, or anything that might be in Drive files. It semantically searches all indexed Google Drive documents. Cite sources with Drive links when returning results.
+
 Team: Rachel Rife (PM), Brian Chaplin (Acquisitions, La Pine OR deals), Marwan Mousa (Leads).
 Priorities: 1) Cash flow via La Pine deals 2) WASem Lot 3 close 3) Traditions North + Brio Vista long-term.
 
@@ -189,7 +192,7 @@ Today: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeri
 
 const TEAM_SYSTEM_PROMPT = `You are Claude EA, the GFDev Brain. Speaking with a team member (not Greg). Direct, helpful, 2-3 sentences max. No emojis. No dashes.
 
-Can do: search shared Drive files, check calendar availability (busy/free only), read project files, look up deal pipeline.
+Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline.
 Cannot do: email access, calendar event details, write files, take actions on Greg's behalf. Say so plainly if asked.
 
 Format: Slack links (<URL|Text>), bullet points, TLDR first. Calendar times in human-readable CST format.
@@ -317,6 +320,19 @@ async function executeTool(toolName, toolInput, userId) {
       return await meetingNotes.searchMeetingNotes(toolInput.query, permissions.isOwner(userId));
     case "backfill_meeting_notes":
       return await meetingNotes.backfillMeetingNotes((msg) => console.log(`[Backfill] ${msg}`));
+    // --- Knowledge Base (RAG) tools ---
+    case "search_knowledge_base": {
+      const isTeam = !permissions.isOwner(userId);
+      return await rag.search(toolInput.query, {
+        deal: toolInput.deal_filter,
+        fileType: toolInput.file_type_filter,
+        teamOnly: isTeam,
+      }, toolInput.max_results || 5);
+    }
+    case "rag_sync_status":
+      return await rag.getStats();
+    case "rag_reindex":
+      return await rag.fullReindex((msg) => console.log(`[RAG] ${msg}`));
     // --- Team tools ---
     case "team_search_drive":
       return await driveTeam.teamSearchDrive(
@@ -1098,6 +1114,44 @@ async function sendMeetingReviewReminder() {
   }
 }
 
+// --- RAG Drive Sync Scheduler ---
+// Syncs Google Drive to Pinecone every 4 hours during daytime (6am-10pm CST)
+const RAG_SYNC_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+const RAG_DAY_START = 6;
+const RAG_DAY_END = 22;
+let ragSyncTimer = null;
+
+function scheduleNextRagSync() {
+  if (ragSyncTimer) clearTimeout(ragSyncTimer);
+  const hour = getCSTHour();
+  // Only sync during daytime
+  if (hour < RAG_DAY_START || hour >= RAG_DAY_END) {
+    // Schedule for next morning
+    const hoursUntilMorning = hour >= RAG_DAY_END ? (24 - hour + RAG_DAY_START) : (RAG_DAY_START - hour);
+    ragSyncTimer = setTimeout(async () => {
+      await runRagSync();
+      scheduleNextRagSync();
+    }, hoursUntilMorning * 60 * 60 * 1000);
+    console.log(`[RAG] Next sync in ${hoursUntilMorning} hours (waiting for daytime).`);
+    return;
+  }
+  ragSyncTimer = setTimeout(async () => {
+    await runRagSync();
+    scheduleNextRagSync();
+  }, RAG_SYNC_INTERVAL);
+  console.log(`[RAG] Next sync in 4 hours (CST hour: ${hour}).`);
+}
+
+async function runRagSync() {
+  try {
+    console.log("[RAG] Running scheduled Drive sync...");
+    const results = await rag.syncDrive((msg) => console.log(`[RAG] ${msg}`));
+    console.log(`[RAG] Sync done: ${results.files_indexed_this_run} new, ${results.files_skipped} skipped, ${results.files_failed} failed.`);
+  } catch (err) {
+    console.error("[RAG] Sync error:", err.message);
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -1137,4 +1191,12 @@ async function sendMeetingReviewReminder() {
 
   scheduleNextMeetingReview();
   console.log("[Meeting Notes] Daily review reminder scheduled at 9:05am CST.");
+
+  // RAG Drive sync: every 4 hours during daytime
+  if (process.env.PINECONE_API_KEY && process.env.GEMINI_API_KEY) {
+    scheduleNextRagSync();
+    console.log("[RAG] Drive sync scheduled every 4 hours (6am-10pm CST).");
+  } else {
+    console.log("[RAG] Skipping Drive sync (PINECONE_API_KEY or GEMINI_API_KEY not set).");
+  }
 })();
