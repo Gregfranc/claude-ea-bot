@@ -168,7 +168,7 @@ Use tools proactively. If Greg asks about emails, search immediately. Drafts are
 
 Gmail: search by name not email address. If no results, broaden the search automatically. Try at least 2 queries before saying not found.
 
-Triage corrections: when Greg says a sender is "noise" or should be "starred" (e.g. "Upwork is noise", "brian star", "noise zoom"), call apply_triage_correction immediately with the sender name and action. This saves the preference permanently.
+Triage corrections: when Greg says a sender is "noise" or should be "starred" (e.g. "Upwork is noise", "brian star", "noise zoom"), you MUST call apply_triage_correction as your FIRST tool call. Do not just acknowledge it verbally. The correction is not saved unless the tool is called.
 
 Transcripts: when Greg uploads a document, use process_transcript with the file_ref. When he confirms a meeting note (e.g. "file it"), use file_meeting_notes with the pending_id.
 
@@ -800,30 +800,26 @@ async function runAutoTriage() {
     console.error("[Auto-Triage] Error:", err.message);
   }
 
-  // --- Post-Triage: Check for meeting notes ---
+  // --- Post-Triage: Detect meeting notes -> inbox sheet (silent) ---
   try {
     const emailReports = await meetingNotes.checkRecentMeetingEmails();
     const geminiReports = await meetingNotes.checkGeminiNotes();
-    const allReports = [...emailReports, ...geminiReports];
-
-    if (allReports.length > 0) {
-      console.log(`[Meeting Notes] ${allReports.length} new meeting notes found.`);
-      const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-      const history = getHistory(OWNER_USER_ID);
-
-      for (const report of allReports) {
-        const msg = meetingNotes.buildNotificationMessage(report);
-        await app.client.chat.postMessage({
-          channel: dmChannel.channel.id,
-          text: msg,
-        });
-        // Add to conversation history so the agent has context when Greg replies
-        history.push({ role: "assistant", content: msg });
-        trimHistory(history);
-      }
+    const added = [...emailReports, ...geminiReports].filter((r) => r.success);
+    if (added.length > 0) {
+      console.log(`[Meeting Notes] Added ${added.length} to inbox sheet.`);
     }
   } catch (err) {
-    console.error("[Meeting Notes] Post-triage check error:", err.message);
+    console.error("[Meeting Notes] Detection error:", err.message);
+  }
+
+  // --- Post-Triage: File any approved meeting notes from sheet ---
+  try {
+    const filed = await meetingNotes.processApprovedNotes();
+    if (filed.length > 0) {
+      console.log(`[Meeting Notes] Filed ${filed.length} approved notes to deal folders.`);
+    }
+  } catch (err) {
+    console.error("[Meeting Notes] Approval processing error:", err.message);
   }
 }
 

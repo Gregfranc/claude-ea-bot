@@ -2,3 +2,6 @@ node_modules/
 .env
 .DS_Store
 ._*
+data/triage-resolved.json
+data/triage-corrections.json
+data/triage-profile.json
