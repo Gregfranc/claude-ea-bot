@@ -9,6 +9,7 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const PROFILE_PATH = path.join(DATA_DIR, "triage-profile.json");
 const CORRECTIONS_PATH = path.join(DATA_DIR, "triage-corrections.json");
 
+const RESOLVED_PATH = path.join(DATA_DIR, "triage-resolved.json");
 const PROMOTION_THRESHOLD = 3;
 
 // Core contacts that should never be demoted to noise
@@ -67,6 +68,79 @@ function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+}
+
+function loadResolved() {
+  ensureDataDir();
+  try {
+    return JSON.parse(fs.readFileSync(RESOLVED_PATH, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveResolved(resolved) {
+  ensureDataDir();
+  fs.writeFileSync(RESOLVED_PATH, JSON.stringify(resolved, null, 2));
+}
+
+function applyTriageCorrection(senderPattern, action) {
+  const profile = loadProfile();
+  const lower = senderPattern.toLowerCase().trim();
+
+  if (action === "noise") {
+    const alreadyNoise = profile.noise_senders.some(
+      (s) => lower.includes(s) || s.includes(lower)
+    );
+    if (!alreadyNoise) {
+      profile.noise_senders.push(lower);
+    }
+    const tier1Idx = profile.tier1_senders.findIndex(
+      (s) => lower.includes(s) || s.includes(lower)
+    );
+    if (tier1Idx !== -1) {
+      profile.tier1_senders.splice(tier1Idx, 1);
+    }
+  } else if (action === "star") {
+    const alreadyTier1 = profile.tier1_senders.some(
+      (s) => lower.includes(s) || s.includes(lower)
+    );
+    if (!alreadyTier1) {
+      profile.tier1_senders.push(lower);
+    }
+    const noiseIdx = profile.noise_senders.findIndex(
+      (s) => lower.includes(s) || s.includes(lower)
+    );
+    if (noiseIdx !== -1) {
+      profile.noise_senders.splice(noiseIdx, 1);
+    }
+  }
+
+  saveProfile(profile);
+
+  // Mark as resolved so confused detection skips this sender
+  const resolved = loadResolved();
+  resolved[lower] = { action, timestamp: new Date().toISOString() };
+  saveResolved(resolved);
+
+  // Audit trail
+  saveCorrection({
+    timestamp: new Date().toISOString(),
+    messageId: null,
+    from: senderPattern,
+    subject: null,
+    old_category: "confused",
+    new_category: action === "noise" ? "EA/Noise" : "EA/Action",
+    signal: "slack_correction",
+    sender_pattern: lower,
+  });
+
+  return {
+    success: true,
+    sender: lower,
+    action,
+    message: `"${lower}" is now ${action === "noise" ? "noise (will auto-archive)" : "starred (will flag as important)"}. Triage profile updated.`,
+  };
 }
 
 function loadProfile() {
@@ -367,8 +441,11 @@ async function learnFromGreg() {
     }
 
     // Detect confused senders: have both promotion and demotion signals
+    // Skip senders Greg already resolved via Slack correction
+    const resolved = loadResolved();
     results.confused = [];
     for (const pattern of Object.keys(promotionCounts)) {
+      if (resolved[pattern]) continue; // Already answered, don't ask again
       if (demotionCounts[pattern] && demotionCounts[pattern] >= 2 && promotionCounts[pattern] >= 2) {
         results.confused.push({
           sender: pattern,
@@ -396,4 +473,5 @@ module.exports = {
   loadCorrections,
   saveProfile,
   extractSenderPattern,
+  applyTriageCorrection,
 };

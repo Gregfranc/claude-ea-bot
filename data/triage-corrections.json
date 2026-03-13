@@ -218,5 +218,15 @@
     "new_category": "EA/Action",
     "signal": "starred",
     "sender_pattern": "american airlines"
+  },
+  {
+    "timestamp": "2026-03-13T01:48:54.003Z",
+    "messageId": null,
+    "from": "upwork",
+    "subject": null,
+    "old_category": "confused",
+    "new_category": "EA/Noise",
+    "signal": "slack_correction",
+    "sender_pattern": "upwork"
   }
 ]

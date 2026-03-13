@@ -295,6 +295,18 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "apply_triage_correction",
+    description: "Apply a triage correction. Mark a sender as 'star' (important) or 'noise' (auto-archive). Use when Greg says a sender should be starred or noise.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sender: { type: "string", description: "Sender name or pattern (e.g. 'upwork', 'brian chaplin')" },
+        action: { type: "string", enum: ["star", "noise"], description: "'star' to flag as important, 'noise' to auto-archive" },
+      },
+      required: ["sender", "action"],
+    },
+  },
+  {
     name: "upload_to_drive",
     description: "Upload file to Google Drive. Updates if same name exists.",
     input_schema: {

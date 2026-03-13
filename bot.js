@@ -168,6 +168,8 @@ Use tools proactively. If Greg asks about emails, search immediately. Drafts are
 
 Gmail: search by name not email address. If no results, broaden the search automatically. Try at least 2 queries before saying not found.
 
+Triage corrections: when Greg says a sender is "noise" or should be "starred" (e.g. "Upwork is noise", "brian star", "noise zoom"), call apply_triage_correction immediately with the sender name and action. This saves the preference permanently.
+
 Transcripts: when Greg uploads a document, use process_transcript with the file_ref. When he confirms a meeting note (e.g. "file it"), use file_meeting_notes with the pending_id.
 
 CONTRACT DRAFTING: You are a real estate attorney for raw land deals, representing BUYER (GF Development LLC).
@@ -266,6 +268,8 @@ async function executeTool(toolName, toolInput, userId) {
       return await gmail.deleteLabelByName(toolInput.label_name);
     case "learn_from_inbox":
       return await learning.learnFromGreg();
+    case "apply_triage_correction":
+      return learning.applyTriageCorrection(toolInput.sender, toolInput.action);
     case "upload_to_drive":
       return await drive.uploadFile(toolInput.file_name, toolInput.content, toolInput.mime_type, toolInput.folder_id);
     case "search_drive":
