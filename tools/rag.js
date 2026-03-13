@@ -23,6 +23,7 @@ const KNOWN_DEALS = [
   "Traditions North", "Brio Vista", "Columbia View Estates",
   "Idaho County 154ac", "Sage Creek", "La Pine OR",
   "Wasem Lot 3", "Tomi Coffe", "Sims", "Cumley", "Forest",
+  "Inness", "Kohls", "Standridge", "Rudeck", "Bell",
 ];
 
 // File types to skip (can't extract text)
@@ -341,7 +342,7 @@ async function ingestFile(fileId, fileName, mimeType, webViewLink, folderPath, m
       total_chunks: chunks.length,
       modified_time: modifiedTime || "",
       web_view_link: webViewLink || "",
-      text: text.substring(0, 1000), // Store truncated text in metadata for retrieval
+      text: text.substring(0, 2000), // Store full chunk text in metadata for retrieval
     },
   }));
 
