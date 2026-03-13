@@ -258,7 +258,10 @@ async function processApprovedNotes() {
     if (!sheetData.data || sheetData.data.length === 0) return results;
 
     for (const row of sheetData.data) {
-      if (row.Status !== "Approved") continue;
+      // Treat as approved if Status is "Approved" OR if Approved Project is filled in
+      const hasApprovedProject = row["Approved Project"] && row["Approved Project"].trim() !== "";
+      if (row.Status !== "Approved" && !hasApprovedProject) continue;
+      if (row.Status === "Filed" || row.Status === "Rejected") continue;
 
       const approvedProject = row["Approved Project"] || row["Suggested Project"] || "General";
       const notes = row.Notes || "";
@@ -294,10 +297,10 @@ async function processApprovedNotes() {
       }
 
       if (!summaryContent) {
-        // Mark as error in sheet
+        // Mark as error in sheet (column J = Status)
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!I${row._row}`,
+          `Sheet1!J${row._row}`,
           [["Error: file not found"]]
         );
         continue;
@@ -338,10 +341,10 @@ async function processApprovedNotes() {
           masterFolderId
         );
 
-        // Update sheet status to "Filed"
+        // Update sheet status to "Filed" (column J)
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!I${row._row}`,
+          `Sheet1!J${row._row}`,
           [["Filed"]]
         );
 
@@ -351,7 +354,7 @@ async function processApprovedNotes() {
         console.error(`[Meeting Notes] Filing error for "${title}": ${err.message}`);
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!I${row._row}`,
+          `Sheet1!J${row._row}`,
           [["Error: " + err.message.substring(0, 50)]]
         );
       }
