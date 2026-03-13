@@ -112,40 +112,55 @@ function saveSyncState(state) {
   fs.writeFileSync(SYNC_STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+// --- Rate Limiting ---
+// Free tier: 100 embed requests/minute. Space them ~700ms apart to stay safe.
+const EMBED_DELAY_MS = 700;
+let lastEmbedTime = 0;
+
+async function rateLimitedEmbed(text, retries = 3) {
+  const ai = getGemini();
+  for (let attempt = 0; attempt < retries; attempt++) {
+    // Enforce minimum delay between calls
+    const now = Date.now();
+    const elapsed = now - lastEmbedTime;
+    if (elapsed < EMBED_DELAY_MS) {
+      await new Promise((r) => setTimeout(r, EMBED_DELAY_MS - elapsed));
+    }
+    lastEmbedTime = Date.now();
+
+    try {
+      const result = await ai.models.embedContent({
+        model: EMBEDDING_MODEL,
+        contents: text,
+        config: { outputDimensionality: EMBEDDING_DIMENSIONS },
+      });
+      return result.embeddings[0].values;
+    } catch (err) {
+      const msg = err.message || "";
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        // Parse retry delay from error, default 60s
+        const retryMatch = msg.match(/retryDelay.*?(\d+)s/i) || msg.match(/retry in (\d+)/i);
+        const waitSec = retryMatch ? parseInt(retryMatch[1]) + 5 : 60;
+        console.log(`[RAG] Rate limited. Waiting ${waitSec}s before retry ${attempt + 1}/${retries}...`);
+        await new Promise((r) => setTimeout(r, waitSec * 1000));
+        continue;
+      }
+      throw err; // Non-rate-limit error, don't retry
+    }
+  }
+  throw new Error("Rate limit retries exhausted");
+}
+
 // --- Embedding ---
 async function embedText(text) {
-  const ai = getGemini();
-  const result = await ai.models.embedContent({
-    model: EMBEDDING_MODEL,
-    contents: text,
-    config: { outputDimensionality: EMBEDDING_DIMENSIONS },
-  });
-  return result.embeddings[0].values;
+  return rateLimitedEmbed(text);
 }
 
 async function embedBatch(texts) {
-  // Gemini supports batching via multiple contents
-  const ai = getGemini();
   const embeddings = [];
-  // Process in batches of 100 (Gemini limit)
-  for (let i = 0; i < texts.length; i += 100) {
-    const batch = texts.slice(i, i + 100);
-    const results = await Promise.all(
-      batch.map((text) =>
-        ai.models.embedContent({
-          model: EMBEDDING_MODEL,
-          contents: text,
-          config: { outputDimensionality: EMBEDDING_DIMENSIONS },
-        })
-      )
-    );
-    for (const r of results) {
-      embeddings.push(r.embeddings[0].values);
-    }
-    // Rate limit: small delay between batches
-    if (i + 100 < texts.length) {
-      await new Promise((r) => setTimeout(r, 500));
-    }
+  for (let i = 0; i < texts.length; i++) {
+    const vec = await rateLimitedEmbed(texts[i]);
+    embeddings.push(vec);
   }
   return embeddings;
 }
@@ -295,8 +310,7 @@ async function crawlDriveFolder(folderId, folderPath, state, progressCb) {
       if (state.failed_files.length > 50) state.failed_files = state.failed_files.slice(-50);
     }
 
-    // Rate limit: small delay between files
-    await new Promise((r) => setTimeout(r, 200));
+    // Rate limiting is handled per-embed-call in rateLimitedEmbed()
   }
 
   return results;
