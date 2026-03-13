@@ -119,8 +119,23 @@ function applyTriageCorrection(senderPattern, action) {
   saveProfile(profile);
 
   // Mark as resolved so confused detection skips this sender
+  // Also resolve all variant patterns (e.g. "upwork" and "upwork.com") via loose match
   const resolved = loadResolved();
-  resolved[lower] = { action, timestamp: new Date().toISOString() };
+  const resolveEntry = { action, timestamp: new Date().toISOString() };
+  resolved[lower] = resolveEntry;
+  // Find and resolve any correction patterns that loosely match this sender
+  const corrections = loadCorrections();
+  const variants = new Set();
+  for (const c of corrections) {
+    if (c.sender_pattern && c.sender_pattern !== lower) {
+      if (c.sender_pattern.includes(lower) || lower.includes(c.sender_pattern)) {
+        variants.add(c.sender_pattern);
+      }
+    }
+  }
+  for (const v of variants) {
+    resolved[v] = resolveEntry;
+  }
   saveResolved(resolved);
 
   // Audit trail
@@ -442,10 +457,16 @@ async function learnFromGreg() {
 
     // Detect confused senders: have both promotion and demotion signals
     // Skip senders Greg already resolved via Slack correction
+    // Use loose matching (includes) consistent with the rest of this file
     const resolved = loadResolved();
+    const resolvedPatterns = Object.keys(resolved);
     results.confused = [];
     for (const pattern of Object.keys(promotionCounts)) {
-      if (resolved[pattern]) continue; // Already answered, don't ask again
+      // Loose match: skip if any resolved pattern overlaps with this one
+      const alreadyResolved = resolvedPatterns.some(
+        (r) => pattern.includes(r) || r.includes(pattern)
+      );
+      if (alreadyResolved) continue;
       if (demotionCounts[pattern] && demotionCounts[pattern] >= 2 && promotionCounts[pattern] >= 2) {
         results.confused.push({
           sender: pattern,

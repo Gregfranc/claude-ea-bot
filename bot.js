@@ -706,19 +706,32 @@ async function runAutoTriage() {
           `[Learning] ${learnResults.corrections} corrections found, ${learnResults.profile_updates} profile updates.`
         );
       }
-      // Ask Greg about confused senders
+      // Ask Greg about confused senders (max once per 24h per sender)
       if (learnResults.confused && learnResults.confused.length > 0) {
-        const questions = learnResults.confused.map((c) =>
-          `• "${c.sender}" has ${c.starred_count} starred and ${c.noise_count} noise labels. Star future emails from them?`
-        ).join("\n");
-        try {
-          const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-          await app.client.chat.postMessage({
-            channel: dmChannel.channel.id,
-            text: `*Quick question on email triage:*\n${questions}\n\nJust reply with the sender name and "star" or "noise" (e.g. "zoom noise" or "brian star").`,
-          });
-        } catch (e) {
-          console.error("[Learning] Could not send confusion DM:", e.message);
+        // Filter out senders we already asked about recently
+        const now = Date.now();
+        const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+        if (!global._confusedAskedAt) global._confusedAskedAt = {};
+        const newConfused = learnResults.confused.filter((c) => {
+          const lastAsked = global._confusedAskedAt[c.sender] || 0;
+          return (now - lastAsked) > COOLDOWN_MS;
+        });
+        if (newConfused.length > 0) {
+          const questions = newConfused.map((c) =>
+            `• "${c.sender}" has ${c.starred_count} starred and ${c.noise_count} noise labels. Star future emails from them?`
+          ).join("\n");
+          try {
+            const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+            await app.client.chat.postMessage({
+              channel: dmChannel.channel.id,
+              text: `*Quick question on email triage:*\n${questions}\n\nJust reply with the sender name and "star" or "noise" (e.g. "zoom noise" or "brian star").`,
+            });
+            for (const c of newConfused) {
+              global._confusedAskedAt[c.sender] = now;
+            }
+          } catch (e) {
+            console.error("[Learning] Could not send confusion DM:", e.message);
+          }
         }
       }
     } catch (err) {
