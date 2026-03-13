@@ -349,14 +349,21 @@ function truncateResult(resultStr) {
 async function runAgent(userId, messages, systemPrompt, tools) {
   const maxIterations = 10;
 
+  // Enable prompt caching: system prompt and tools are identical every call,
+  // so cached reads don't count against the input token rate limit.
+  const cachedSystem = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+  const cachedTools = tools.map((t, i) =>
+    i === tools.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t
+  );
+
   for (let i = 0; i < maxIterations; i++) {
     let response;
     try {
       response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2048,
-        system: systemPrompt,
-        tools,
+        system: cachedSystem,
+        tools: cachedTools,
         messages,
       });
     } catch (err) {
@@ -369,8 +376,8 @@ async function runAgent(userId, messages, systemPrompt, tools) {
           response = await anthropic.messages.create({
             model: "claude-sonnet-4-20250514",
             max_tokens: 2048,
-            system: systemPrompt,
-            tools,
+            system: cachedSystem,
+            tools: cachedTools,
             messages,
           });
         } catch (retryErr) {
