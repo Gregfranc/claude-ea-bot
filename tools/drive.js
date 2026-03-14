@@ -181,7 +181,7 @@ async function readFile(fileId) {
     }
 
     if (pdfText.length > 50) {
-      return { name, mimeType, content: pdfText.substring(0, 10000), pages, note: `Extracted ${pages} pages (truncated to 10000 chars).` };
+      return { name, mimeType, content: pdfText, pages, note: `Extracted ${pages} pages, ${pdfText.length} chars.` };
     }
 
     // Fallback: Gemini vision for scanned/image PDFs
@@ -202,7 +202,7 @@ async function readFile(fileId) {
         });
         const extracted = (response.text || "").trim();
         if (extracted.length > 50) {
-          return { name, mimeType, content: extracted.substring(0, 10000), pages: pages || "unknown", note: "Extracted via Gemini OCR (scanned PDF)." };
+          return { name, mimeType, content: extracted, pages: pages || "unknown", note: `Extracted via Gemini OCR (scanned PDF), ${extracted.length} chars.` };
         }
       } catch (err) {
         console.error(`[Drive] Gemini PDF fallback failed for ${name}: ${err.message}`);
@@ -214,14 +214,14 @@ async function readFile(fileId) {
 
   // Text-based files
   if (mimeType && (mimeType.startsWith("text/") || mimeType.includes("json") || mimeType.includes("xml"))) {
-    return { name, mimeType, content: buffer.toString("utf-8").substring(0, 10000) };
+    return { name, mimeType, content: buffer.toString("utf-8") };
   }
 
   // Word docs: basic text extraction
   if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     const text = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/ {3,}/g, " ").trim();
     if (text.length > 100) {
-      return { name, mimeType, content: text.substring(0, 10000), note: "Basic .docx text extraction." };
+      return { name, mimeType, content: text, note: "Basic .docx text extraction." };
     }
     return { name, mimeType, content: "(Could not extract text from .docx)", size: buffer.length };
   }
