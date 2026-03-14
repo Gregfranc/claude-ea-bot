@@ -68,6 +68,12 @@ const DOCUMENT_MIME_TYPES = [
   "application/x-subrip",
 ];
 
+const IMAGE_MIME_TYPES = [
+  "image/png", "image/jpeg", "image/gif", "image/webp",
+];
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB cap
+
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -666,14 +672,52 @@ app.message(async ({ message, say }) => {
     }
   }
 
-  if (!text) return;
+  // Check for image files (screenshots, photos)
+  let imageBlocks = [];
+  if (!audioFile) {
+    const imageFiles = (message.files || []).filter((f) =>
+      IMAGE_MIME_TYPES.includes(f.mimetype)
+    );
+    for (const imgFile of imageFiles) {
+      try {
+        console.log(`[Image] Downloading ${imgFile.name} (${imgFile.mimetype}, ${(imgFile.size / 1024).toFixed(1)} KB)...`);
+        if (imgFile.size > MAX_IMAGE_BYTES) {
+          console.log(`[Image] Skipping ${imgFile.name} — too large (${(imgFile.size / 1024 / 1024).toFixed(1)} MB)`);
+          continue;
+        }
+        const buffer = await downloadSlackFile(
+          imgFile.url_private_download || imgFile.url_private,
+          process.env.SLACK_BOT_TOKEN
+        );
+        const base64 = buffer.toString("base64");
+        imageBlocks.push({
+          type: "image",
+          source: { type: "base64", media_type: imgFile.mimetype, data: base64 },
+        });
+        console.log(`[Image] Added ${imgFile.name} (${(buffer.length / 1024).toFixed(1)} KB)`);
+      } catch (err) {
+        console.error(`[Image] Failed to download ${imgFile.name}:`, err.message);
+      }
+    }
+  }
+
+  if (!text && imageBlocks.length === 0) return;
 
   const tier = permissions.getUserTier(userId);
   const systemPrompt = tier === "owner" ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
   const tools = tier === "owner" ? OWNER_TOOLS : tier === "team" ? TEAM_TOOLS : PUBLIC_TOOLS;
 
   const history = getHistory(userId);
-  history.push({ role: "user", content: text });
+  // Use content blocks array when images are present, plain text otherwise
+  if (imageBlocks.length > 0) {
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    content.push(...imageBlocks);
+    if (!text) content.push({ type: "text", text: "What's in this image?" });
+    history.push({ role: "user", content });
+  } else {
+    history.push({ role: "user", content: text });
+  }
   trimHistory(history);
 
   try {
@@ -721,14 +765,44 @@ app.message(async ({ message, say }) => {
 app.event("app_mention", async ({ event, say }) => {
   const userId = event.user;
   const text = event.text.replace(/<@[A-Z0-9]+>/g, "").trim();
-  if (!text) return;
+
+  // Check for image files in mentions
+  let imageBlocks = [];
+  const imageFiles = (event.files || []).filter((f) =>
+    IMAGE_MIME_TYPES.includes(f.mimetype)
+  );
+  for (const imgFile of imageFiles) {
+    try {
+      if (imgFile.size > MAX_IMAGE_BYTES) continue;
+      const buffer = await downloadSlackFile(
+        imgFile.url_private_download || imgFile.url_private,
+        process.env.SLACK_BOT_TOKEN
+      );
+      imageBlocks.push({
+        type: "image",
+        source: { type: "base64", media_type: imgFile.mimetype, data: buffer.toString("base64") },
+      });
+    } catch (err) {
+      console.error(`[Image] Failed to download ${imgFile.name}:`, err.message);
+    }
+  }
+
+  if (!text && imageBlocks.length === 0) return;
 
   const tier = permissions.getUserTier(userId);
   const systemPrompt = tier === "owner" ? OWNER_SYSTEM_PROMPT : TEAM_SYSTEM_PROMPT;
   const tools = tier === "owner" ? OWNER_TOOLS : tier === "team" ? TEAM_TOOLS : PUBLIC_TOOLS;
 
   const history = getHistory(userId);
-  history.push({ role: "user", content: text });
+  if (imageBlocks.length > 0) {
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    content.push(...imageBlocks);
+    if (!text) content.push({ type: "text", text: "What's in this image?" });
+    history.push({ role: "user", content });
+  } else {
+    history.push({ role: "user", content: text });
+  }
   trimHistory(history);
 
   try {
@@ -935,6 +1009,164 @@ async function runAutoTriage() {
     }
   } catch (err) {
     console.error("[Meeting Notes] Approval processing error:", err.message);
+  }
+
+  // --- Post-Triage: Process email tasks (greg+task@ or EA/Task label) ---
+  try {
+    await processEmailTasks();
+  } catch (err) {
+    console.error("[Email Tasks] Error in triage cycle:", err.message);
+  }
+}
+
+// --- Email Task Processing ---
+// Greg forwards emails to greg+task@gfdevllc.com (or labels them EA/Task)
+// Bot picks them up each triage cycle, runs through agent, DMs result
+
+function parseForwardedEmail(body, subject) {
+  if (!body) return { instructions: null, forwardedContent: null, forwardedFrom: null, forwardedSubject: null };
+
+  const fwdPatterns = [
+    /---------- Forwarded message ---------/i,
+    /---------- Forwarded message ----------/i,
+    /Begin forwarded message:/i,
+    /-----Original Message-----/i,
+    /--- Forwarded message ---/i,
+  ];
+
+  let splitIndex = -1;
+  let matchLength = 0;
+  for (const pattern of fwdPatterns) {
+    const match = body.match(pattern);
+    if (match) {
+      splitIndex = match.index;
+      matchLength = match[0].length;
+      break;
+    }
+  }
+
+  if (splitIndex === -1) {
+    // No forwarding markers — direct email to +task address
+    return { instructions: body.trim(), forwardedContent: null, forwardedFrom: null, forwardedSubject: null };
+  }
+
+  const instructions = body.substring(0, splitIndex).trim();
+  const forwarded = body.substring(splitIndex + matchLength).trim();
+
+  // Extract From and Subject from forwarded headers
+  let forwardedFrom = null;
+  let forwardedSubject = null;
+  const fromMatch = forwarded.match(/^From:?\s*(.+?)$/m);
+  if (fromMatch) forwardedFrom = fromMatch[1].trim();
+  const subjMatch = forwarded.match(/^Subject:?\s*(.+?)$/m);
+  if (subjMatch) forwardedSubject = subjMatch[1].trim();
+
+  return { instructions: instructions || null, forwardedContent: forwarded, forwardedFrom, forwardedSubject };
+}
+
+async function processEmailTasks() {
+  try {
+    const doneLabel = await gmail.getOrCreateLabel("EA/Task-Done");
+    const triagedLabel = await gmail.getOrCreateLabel("EA/Triaged");
+    // Also create EA/Task label so Greg can use it for manual labeling
+    await gmail.getOrCreateLabel("EA/Task");
+
+    const gmailClient = gmail.getGmail();
+    // Search for: forwarded to +task address OR manually labeled EA/Task
+    const res = await gmailClient.users.messages.list({
+      userId: "me",
+      q: '{to:"greg+task@gfdevllc.com" label:EA-Task} newer_than:24h',
+      maxResults: 10,
+    });
+
+    if (!res.data.messages || res.data.messages.length === 0) return;
+
+    // Filter out already-processed emails
+    const toProcess = [];
+    for (const msg of res.data.messages) {
+      const meta = await gmailClient.users.messages.get({
+        userId: "me",
+        id: msg.id,
+        format: "minimal",
+      });
+      const labels = meta.data.labelIds || [];
+      if (!labels.includes(doneLabel.id)) {
+        toProcess.push(msg);
+      }
+    }
+
+    if (toProcess.length === 0) return;
+
+    console.log(`[Email Tasks] Found ${toProcess.length} task email(s).`);
+
+    for (const msg of toProcess) {
+      try {
+        const email = await gmail.readEmail(msg.id);
+
+        const { instructions, forwardedContent, forwardedFrom, forwardedSubject } = parseForwardedEmail(email.body, email.subject);
+
+        // Build the prompt for the agent
+        let taskPrompt;
+        if (instructions && forwardedContent) {
+          taskPrompt = `[EMAIL TASK] Greg forwarded an email with these instructions:\n\n"${instructions}"\n\n--- Original email ---\nFrom: ${forwardedFrom || "unknown"}\nSubject: ${forwardedSubject || email.subject}\n\n${forwardedContent}`;
+        } else if (forwardedContent) {
+          taskPrompt = `[EMAIL TASK] Greg forwarded this email without instructions. Summarize it and identify any action items.\n\nFrom: ${forwardedFrom || "unknown"}\nSubject: ${forwardedSubject || email.subject}\n\n${forwardedContent}`;
+        } else if (instructions) {
+          taskPrompt = `[EMAIL TASK] Greg sent this task via email:\n\nSubject: ${email.subject}\n\n${instructions}`;
+        } else {
+          taskPrompt = `[EMAIL TASK] Greg sent this email as a task but it appears empty. Subject: ${email.subject}`;
+        }
+
+        taskPrompt += `\n\nIMPORTANT: For email tasks, create drafts instead of sending emails directly. Do not send anything without Greg's explicit Slack approval.`;
+
+        // Run through agent with owner permissions
+        const messages = [{ role: "user", content: taskPrompt }];
+        const result = await runAgent(OWNER_USER_ID, messages, OWNER_SYSTEM_PROMPT, OWNER_TOOLS);
+
+        // DM Greg the result
+        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+        const subjectShort = email.subject.length > 60 ? email.subject.substring(0, 57) + "..." : email.subject;
+        // Strip usage footer for cleaner DM
+        const cleanResult = result.replace(/\n\n_\d+ calls?.*\$[\d.]+_$/, "");
+        const trimmed = cleanResult.length > 3000 ? cleanResult.substring(0, 3000) + "..." : cleanResult;
+
+        await app.client.chat.postMessage({
+          channel: dmChannel.channel.id,
+          text: `*Email task processed:* ${subjectShort}\n\n${trimmed}`,
+        });
+
+        // Mark as done
+        await gmailClient.users.messages.modify({
+          userId: "me",
+          id: msg.id,
+          requestBody: {
+            addLabelIds: [doneLabel.id, triagedLabel.id],
+          },
+        });
+
+        console.log(`[Email Tasks] Processed: ${email.subject}`);
+      } catch (taskErr) {
+        console.error(`[Email Tasks] Failed to process ${msg.id}:`, taskErr.message);
+        // Mark as done to prevent retry loops
+        try {
+          await gmailClient.users.messages.modify({
+            userId: "me",
+            id: msg.id,
+            requestBody: { addLabelIds: [doneLabel.id] },
+          });
+        } catch (_) {}
+        // Notify Greg of the failure
+        try {
+          const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+          await app.client.chat.postMessage({
+            channel: dmChannel.channel.id,
+            text: `*Email task failed:* Could not process a forwarded email. Error: ${taskErr.message}`,
+          });
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.error("[Email Tasks] Error:", err.message);
   }
 }
 
@@ -1500,6 +1732,7 @@ async function runQuoPoll() {
   // Schedule adaptive triage (15 min daytime, 60 min nighttime CST)
   scheduleNextTriage();
   console.log("[Auto-Triage] Adaptive schedule active (15 min 5am-11pm CST, 60 min overnight).");
+  console.log("[Email Tasks] Active. Forward emails to greg+task@gfdevllc.com or label EA/Task.");
 
   scheduleNextAnalysis();
   console.log("[Triage Analysis] Daily reports scheduled at noon and 7pm CST.");

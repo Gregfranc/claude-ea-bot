@@ -478,7 +478,7 @@ async function triageInbox(hoursBack = 6) {
     labelByName[l.name] = l.id;
   }
 
-  const query = `newer_than:${hoursBack}h -label:EA-Triaged -in:sent`;
+  const query = `newer_than:${hoursBack}h -label:EA-Triaged -in:sent -to:greg+task@gfdevllc.com -label:EA-Task`;
   const res = await gmailClient.users.messages.list({
     userId: "me",
     q: query,
