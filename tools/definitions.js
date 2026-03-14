@@ -681,6 +681,12 @@ const OWNER_TOOLS = [
       required: [],
     },
   },
+  // Web search: server-side tool, executed by Anthropic. No client handling needed.
+  {
+    type: "web_search_20250305",
+    name: "web_search",
+    max_uses: 5,
+  },
 ];
 
 // Team tools: Drive search, availability, project files, pipeline. No email/calendar details.
