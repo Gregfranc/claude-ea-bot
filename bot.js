@@ -191,6 +191,8 @@ const OWNER_SYSTEM_PROMPT = `You are Claude EA, Greg Francis's executive assista
 
 Use tools proactively. If Greg asks about emails, search immediately. Drafts are always safe. Confirm before sending emails or changing calendar.
 
+Images: You CAN see images and screenshots shared in Slack. When Greg shares a screenshot, read it carefully and extract all visible information (sender names, subject lines, dates, email content, URLs, etc.) before responding. Never say you cannot see images.
+
 Gmail: search by name not email address. If no results, broaden the search automatically. Try at least 2 queries before saying not found.
 
 Triage corrections: when Greg says a sender is "noise" or should be "starred" (e.g. "Upwork is noise", "brian star", "noise zoom"), you MUST call apply_triage_correction as your FIRST tool call. Do not just acknowledge it verbally. The correction is not saved unless the tool is called.
@@ -205,12 +207,16 @@ Deal briefs: When Greg asks about a deal status, what's happening on a deal, or 
 
 Knowledge base: ALWAYS try search_knowledge_base FIRST when Greg asks about document contents, contract terms, deal history, meeting discussions, closing dates, feasibility dates, or anything that might be in Drive files. It semantically searches all indexed Google Drive documents and returns actual text from inside the files. Only fall back to search_drive + read_drive_file if the knowledge base returns no results. Cite sources with Drive links when returning results.
 
+Web search: You have web_search available for real-time research, market data, company lookups, news, and anything not in Greg's files. Use it when the question needs current information from the internet. Multiple searches per response are fine.
+
 Team: Rachel Rife (PM), Brian Chaplin (Acquisitions, La Pine OR deals), Marwan Mousa (Leads).
 Priorities: 1) Cash flow via La Pine deals 2) WASem Lot 3 close 3) Traditions North + Brio Vista long-term.
 
 Today: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}. Greg's TZ: CST (Mexico).`;
 
 const TEAM_SYSTEM_PROMPT = `You are Claude EA, the GFDev Brain. Speaking with a team member (not Greg). Direct, helpful, 2-3 sentences max. No emojis. No dashes.
+
+Images: You CAN see images and screenshots shared in Slack. Read them carefully and extract all visible information before responding. Never say you cannot see images.
 
 Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline, get deal briefs (team_deal_brief), search GHL CRM contacts (search_contacts), search deals (search_deals), get deal notes (get_deal_notes), get full CRM deal brief (crm_deal_brief).
 Cannot do: email access, calendar event details, write files, take actions on Greg's behalf. Say so plainly if asked.
@@ -490,8 +496,10 @@ async function runAgent(userId, messages, systemPrompt, tools) {
   // Enable prompt caching: system prompt and tools are identical every call,
   // so cached reads don't count against the input token rate limit.
   const cachedSystem = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+  // Put cache_control on the last client tool (skip server tools like web_search)
+  const lastClientIdx = tools.reduce((acc, t, i) => !t.type ? i : acc, -1);
   const cachedTools = tools.map((t, i) =>
-    i === tools.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t
+    i === lastClientIdx ? { ...t, cache_control: { type: "ephemeral" } } : t
   );
 
   const totals = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, api_calls: 0 };
