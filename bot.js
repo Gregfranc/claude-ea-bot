@@ -21,6 +21,7 @@ const sheets = require("./tools/sheets");
 const contracts = require("./tools/contracts");
 const dealBrief = require("./tools/deal-brief");
 const driveWatcher = require("./tools/drive-watcher");
+const contractDrafter = require("./tools/subagents/contract-drafter");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -187,14 +188,7 @@ Triage corrections: when Greg says a sender is "noise" or should be "starred" (e
 
 Transcripts: when Greg uploads a document, use process_transcript with the file_ref. Meeting notes are auto-detected and tracked in a Google Sheet tracker (no Slack notifications). Greg reviews and approves them in the sheet. When Greg asks about past meetings (e.g. "what did we discuss about drainage" or "find meeting notes with Knox"), use search_meeting_notes. When Greg says "backfill meeting notes", call the backfill_meeting_notes tool immediately. It scans 6 months of emails + all Gemini Notes from Drive and adds them to the tracker sheet. This takes several minutes.
 
-CONTRACT DRAFTING: You are a real estate attorney for raw land deals, representing BUYER (GF Development LLC).
-1. search_precedent first, then check templates
-2. Ask focused intake questions if terms are missing (property, price, earnest money, DD period, closing, utilities, assignment rights, costs, risks)
-3. lookup_deal for pipeline data
-4. Draft with clean attorney-grade language, mirror precedent where appropriate
-5. Flag borrowed clauses, optional clauses, jurisdiction issues, assumptions
-6. generate_contract_doc to create .docx on Drive
-Amendments: reference original by date/parties, state only modified terms.
+CONTRACT DRAFTING: When Greg asks to draft, write, or create any contract, amendment, extension, or assignment, use draft_contract. It runs a specialized subagent that searches precedent, gathers deal context, drafts with attorney-grade language, validates, and uploads a .docx to Drive. You just need to pass the deal name, document type, and any terms Greg specified. If Greg just wants to format text he already wrote into a .docx, use generate_contract_doc instead.
 
 Deal briefs: When Greg asks about a deal status, what's happening on a deal, or what needs to happen next, use deal_brief FIRST. It pulls recent emails, project files, pipeline sheet, calendar events, meeting notes, and knowledge base results into one comprehensive view. Present the results organized by section and highlight what changed recently and what needs attention next.
 
@@ -323,12 +317,8 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.reasoning,
         toolInput.context
       );
-    case "search_precedent":
-      return await contracts.searchPrecedent(toolInput.deal_type, toolInput.market, toolInput.keywords);
-    case "list_contract_templates":
-      return await contracts.listTemplates();
-    case "read_contract_template":
-      return await contracts.readTemplate(toolInput.template_name);
+    case "draft_contract":
+      return await contractDrafter.runContractDrafter(toolInput.deal_name, toolInput.doc_type, toolInput.terms);
     case "generate_contract_doc":
       return await contracts.generateContractDoc(toolInput.contract_text, toolInput.file_name, toolInput.doc_type, toolInput.deal_name);
     case "process_transcript":
@@ -511,9 +501,9 @@ async function runAgent(userId, messages, systemPrompt, tools) {
         try {
           const result = await executeTool(block.name, block.input, userId);
           const resultStr = typeof result === "string" ? result : JSON.stringify(result);
-          // Deal briefs are compound results that need more space
-          const briefTools = ["deal_brief", "team_deal_brief"];
-          const limit = briefTools.includes(block.name) ? 8000 : MAX_TOOL_RESULT_CHARS;
+          // Compound tools and subagents need more space
+          const bigTools = ["deal_brief", "team_deal_brief", "draft_contract"];
+          const limit = bigTools.includes(block.name) ? 15000 : MAX_TOOL_RESULT_CHARS;
           const truncated = resultStr.length > limit
             ? resultStr.substring(0, limit) + '... [truncated, ' + resultStr.length + ' total chars]'
             : resultStr;

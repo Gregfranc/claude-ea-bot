@@ -513,43 +513,23 @@ const OWNER_TOOLS = [
       required: ["decision", "reasoning", "context"],
     },
   },
-  // --- Contract Drafting Tools ---
+  // --- Contract Drafting ---
   {
-    name: "search_precedent",
-    description: "Search Drive for past contracts/amendments as precedent before drafting.",
+    name: "draft_contract",
+    description: "Draft a real estate contract. Runs a specialized subagent that searches precedent, gathers deal context, drafts with attorney-grade language, validates, and uploads a .docx to Drive. Use when Greg asks to draft, write, or create any contract, amendment, extension, assignment, or agreement.",
     input_schema: {
       type: "object",
       properties: {
-        deal_type: { type: "string", description: "Type: purchase-agreement, amendment, extension, assignment, lot-sale, option, earnest-money" },
-        market: { type: "string", description: "Market: Idaho, Nevada, Washington, Oregon, California" },
-        keywords: { type: "string", description: "Search keywords (property/party name)" },
+        deal_name: { type: "string", description: "Deal name (e.g. 'Cumley', 'Traditions North', 'Innes')" },
+        doc_type: { type: "string", enum: ["purchase-agreement", "amendment", "extension", "assignment", "lot-sale", "option", "earnest-money"], description: "Type of document to draft" },
+        terms: { type: "string", description: "Specific terms, instructions, or context from Greg (price, dates, parties, special conditions)" },
       },
-      required: [],
-    },
-  },
-  {
-    name: "list_contract_templates",
-    description: "List available contract templates.",
-    input_schema: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: "read_contract_template",
-    description: "Read a contract template by name.",
-    input_schema: {
-      type: "object",
-      properties: {
-        template_name: { type: "string", description: "Template name (no .md extension)" },
-      },
-      required: ["template_name"],
+      required: ["deal_name", "doc_type"],
     },
   },
   {
     name: "generate_contract_doc",
-    description: "Generate .docx contract and upload to Drive. Date-prefixed filename.",
+    description: "Convert already-written contract text to a .docx file and upload to Drive. Use only when Greg provides contract text directly and just needs it formatted. For drafting new contracts, use draft_contract instead.",
     input_schema: {
       type: "object",
       properties: {
