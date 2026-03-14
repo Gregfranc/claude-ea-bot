@@ -1,7 +1,35 @@
 const { google } = require("googleapis");
 const path = require("path");
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const pdfParse = require("pdf-parse");
+
+// --- File Read Cache ---
+// Caches extracted text from Drive files on disk to avoid repeat downloads + OCR.
+// Invalidated when file's modifiedTime changes in Drive.
+const CACHE_DIR = path.join(__dirname, "../data/file-cache");
+
+function ensureCacheDir() {
+  if (!fsSync.existsSync(CACHE_DIR)) fsSync.mkdirSync(CACHE_DIR, { recursive: true });
+}
+
+function getCachePath(fileId) {
+  return path.join(CACHE_DIR, `${fileId}.json`);
+}
+
+function readCache(fileId) {
+  try {
+    const raw = fsSync.readFileSync(getCachePath(fileId), "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(fileId, data) {
+  ensureCacheDir();
+  fsSync.writeFileSync(getCachePath(fileId), JSON.stringify(data));
+}
 
 function getAuth() {
   return new google.auth.OAuth2(
@@ -129,16 +157,31 @@ async function listFolder(folderId, maxResults = 25) {
   return res.data.files || [];
 }
 
-// Read/download file content from Drive
+// Read/download file content from Drive (with local cache)
 async function readFile(fileId) {
   const drive = getDrive();
 
-  // Get file metadata first
+  // Get file metadata (always needed for cache validation)
   const meta = await drive.files.get({
     fileId,
-    fields: "id, name, mimeType, size",
+    fields: "id, name, mimeType, size, modifiedTime",
   });
-  const { name, mimeType } = meta.data;
+  const { name, mimeType, modifiedTime } = meta.data;
+
+  // Check cache: if file hasn't changed since last read, return cached text
+  const cached = readCache(fileId);
+  if (cached && cached.modifiedTime === modifiedTime) {
+    return { ...cached.result, note: (cached.result.note || "") + " (cached)" };
+  }
+
+  // Helper: cache result and return it
+  function cacheAndReturn(result) {
+    // Don't cache folders (dynamic), errors, or empty reads
+    if (result.content && result.content.length > 50 && !result.files) {
+      writeCache(fileId, { modifiedTime, result });
+    }
+    return result;
+  }
 
   // Google Workspace files need export
   if (mimeType === "application/vnd.google-apps.document") {
@@ -146,14 +189,14 @@ async function readFile(fileId) {
       { fileId, mimeType: "text/plain" },
       { responseType: "text" }
     );
-    return { name, mimeType, content: res.data };
+    return cacheAndReturn({ name, mimeType, content: res.data });
   }
   if (mimeType === "application/vnd.google-apps.spreadsheet") {
     const res = await drive.files.export(
       { fileId, mimeType: "text/csv" },
       { responseType: "text" }
     );
-    return { name, mimeType, content: res.data };
+    return cacheAndReturn({ name, mimeType, content: res.data });
   }
   if (mimeType === "application/vnd.google-apps.folder") {
     const files = await listFolder(fileId);
@@ -181,7 +224,7 @@ async function readFile(fileId) {
     }
 
     if (pdfText.length > 50) {
-      return { name, mimeType, content: pdfText, pages, note: `Extracted ${pages} pages, ${pdfText.length} chars.` };
+      return cacheAndReturn({ name, mimeType, content: pdfText, pages, note: `Extracted ${pages} pages, ${pdfText.length} chars.` });
     }
 
     // Fallback: Gemini vision for scanned/image PDFs
@@ -202,7 +245,7 @@ async function readFile(fileId) {
         });
         const extracted = (response.text || "").trim();
         if (extracted.length > 50) {
-          return { name, mimeType, content: extracted, pages: pages || "unknown", note: `Extracted via Gemini OCR (scanned PDF), ${extracted.length} chars.` };
+          return cacheAndReturn({ name, mimeType, content: extracted, pages: pages || "unknown", note: `Extracted via Gemini OCR (scanned PDF), ${extracted.length} chars.` });
         }
       } catch (err) {
         console.error(`[Drive] Gemini PDF fallback failed for ${name}: ${err.message}`);
@@ -214,14 +257,14 @@ async function readFile(fileId) {
 
   // Text-based files
   if (mimeType && (mimeType.startsWith("text/") || mimeType.includes("json") || mimeType.includes("xml"))) {
-    return { name, mimeType, content: buffer.toString("utf-8") };
+    return cacheAndReturn({ name, mimeType, content: buffer.toString("utf-8") });
   }
 
   // Word docs: basic text extraction
   if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     const text = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/ {3,}/g, " ").trim();
     if (text.length > 100) {
-      return { name, mimeType, content: text, note: "Basic .docx text extraction." };
+      return cacheAndReturn({ name, mimeType, content: text, note: "Basic .docx text extraction." });
     }
     return { name, mimeType, content: "(Could not extract text from .docx)", size: buffer.length };
   }
