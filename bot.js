@@ -624,6 +624,12 @@ app.message(async ({ message, say }) => {
   const userId = message.user;
   let text = message.text || "";
 
+  // Debug: log all files attached to this message
+  if (message.files && message.files.length > 0) {
+    console.log(`[Files] ${message.files.length} file(s) in message:`,
+      JSON.stringify(message.files.map(f => ({ name: f.name, mime: f.mimetype, filetype: f.filetype, size: f.size, mode: f.mode }))));
+  }
+
   // Check for audio files (voice notes)
   const audioFile = (message.files || []).find((f) =>
     AUDIO_MIME_TYPES.some((mime) => (f.mimetype || "").startsWith(mime.split("/")[0]))
@@ -681,31 +687,53 @@ app.message(async ({ message, say }) => {
   }
 
   // Check for image files (screenshots, photos)
+  // Match by mimetype, file extension, OR Slack filetype field for robustness
+  const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
+  const IMAGE_FILETYPES = ["png", "jpg", "jpeg", "gif", "webp"];
   let imageBlocks = [];
   if (!audioFile) {
-    const imageFiles = (message.files || []).filter((f) =>
-      IMAGE_MIME_TYPES.includes(f.mimetype)
-    );
+    const imageFiles = (message.files || []).filter((f) => {
+      const mime = (f.mimetype || "").toLowerCase();
+      const ext = pathMod.extname(f.name || "").toLowerCase();
+      const ftype = (f.filetype || "").toLowerCase();
+      return IMAGE_MIME_TYPES.includes(mime) ||
+        IMAGE_EXTENSIONS.includes(ext) ||
+        IMAGE_FILETYPES.includes(ftype);
+    });
+    console.log(`[Image] Detection: ${(message.files || []).length} total files, ${imageFiles.length} images matched`);
     for (const imgFile of imageFiles) {
       try {
-        console.log(`[Image] Downloading ${imgFile.name} (${imgFile.mimetype}, ${(imgFile.size / 1024).toFixed(1)} KB)...`);
-        if (imgFile.size > MAX_IMAGE_BYTES) {
+        // Determine media type for Claude API (prefer mimetype, fall back to extension)
+        let mediaType = IMAGE_MIME_TYPES.includes((imgFile.mimetype || "").toLowerCase())
+          ? imgFile.mimetype.toLowerCase()
+          : `image/${imgFile.filetype || pathMod.extname(imgFile.name || ".png").replace(".", "")}`;
+        console.log(`[Image] Downloading ${imgFile.name} (${mediaType}, ${((imgFile.size || 0) / 1024).toFixed(1)} KB)...`);
+        if (imgFile.size && imgFile.size > MAX_IMAGE_BYTES) {
           console.log(`[Image] Skipping ${imgFile.name} — too large (${(imgFile.size / 1024 / 1024).toFixed(1)} MB)`);
           continue;
         }
-        const buffer = await downloadSlackFile(
-          imgFile.url_private_download || imgFile.url_private,
-          process.env.SLACK_BOT_TOKEN
-        );
+        const fileUrl = imgFile.url_private_download || imgFile.url_private;
+        if (!fileUrl) {
+          console.error(`[Image] No download URL for ${imgFile.name}. File object:`, JSON.stringify(imgFile).substring(0, 300));
+          continue;
+        }
+        const buffer = await downloadSlackFile(fileUrl, process.env.SLACK_BOT_TOKEN);
+        if (buffer.length < 100) {
+          console.error(`[Image] Downloaded file too small (${buffer.length} bytes), likely not an image`);
+          continue;
+        }
         const base64 = buffer.toString("base64");
         imageBlocks.push({
           type: "image",
-          source: { type: "base64", media_type: imgFile.mimetype, data: base64 },
+          source: { type: "base64", media_type: mediaType, data: base64 },
         });
-        console.log(`[Image] Added ${imgFile.name} (${(buffer.length / 1024).toFixed(1)} KB)`);
+        console.log(`[Image] Added ${imgFile.name} (${(buffer.length / 1024).toFixed(1)} KB, ${mediaType})`);
       } catch (err) {
         console.error(`[Image] Failed to download ${imgFile.name}:`, err.message);
       }
+    }
+    if (imageBlocks.length > 0) {
+      console.log(`[Image] ${imageBlocks.length} image(s) will be sent to Claude API`);
     }
   }
 
@@ -776,19 +804,27 @@ app.event("app_mention", async ({ event, say }) => {
 
   // Check for image files in mentions
   let imageBlocks = [];
-  const imageFiles = (event.files || []).filter((f) =>
-    IMAGE_MIME_TYPES.includes(f.mimetype)
-  );
+  const imageFiles = (event.files || []).filter((f) => {
+    const mime = (f.mimetype || "").toLowerCase();
+    const ext = pathMod.extname(f.name || "").toLowerCase();
+    const ftype = (f.filetype || "").toLowerCase();
+    return IMAGE_MIME_TYPES.includes(mime) ||
+      [".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(ext) ||
+      ["png", "jpg", "jpeg", "gif", "webp"].includes(ftype);
+  });
   for (const imgFile of imageFiles) {
     try {
-      if (imgFile.size > MAX_IMAGE_BYTES) continue;
-      const buffer = await downloadSlackFile(
-        imgFile.url_private_download || imgFile.url_private,
-        process.env.SLACK_BOT_TOKEN
-      );
+      if (imgFile.size && imgFile.size > MAX_IMAGE_BYTES) continue;
+      const fileUrl = imgFile.url_private_download || imgFile.url_private;
+      if (!fileUrl) continue;
+      const buffer = await downloadSlackFile(fileUrl, process.env.SLACK_BOT_TOKEN);
+      if (buffer.length < 100) continue;
+      const mediaType = IMAGE_MIME_TYPES.includes((imgFile.mimetype || "").toLowerCase())
+        ? imgFile.mimetype.toLowerCase()
+        : `image/${imgFile.filetype || pathMod.extname(imgFile.name || ".png").replace(".", "")}`;
       imageBlocks.push({
         type: "image",
-        source: { type: "base64", media_type: imgFile.mimetype, data: buffer.toString("base64") },
+        source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") },
       });
     } catch (err) {
       console.error(`[Image] Failed to download ${imgFile.name}:`, err.message);
