@@ -273,9 +273,223 @@ async function generateContractDoc(contractText, fileName, docType, dealName) {
   };
 }
 
+// --- Multi-Section DOCX (cover letter + contract + about me) ---
+
+function parseCoverLetterToDocx(text) {
+  const lines = text.split("\n");
+  const children = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      children.push(new Paragraph({ spacing: { after: 100 } }));
+      continue;
+    }
+
+    // Letterhead lines (company name, address)
+    if (trimmed === "GF DEVELOPMENT LLC" || trimmed === "real estate") {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: trimmed, bold: trimmed === "GF DEVELOPMENT LLC", size: trimmed === "GF DEVELOPMENT LLC" ? 28 : 20, font: "Arial" })],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 0 },
+        })
+      );
+      continue;
+    }
+
+    // Signature placeholder
+    if (trimmed === "[SIGNATURE]") {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: "[Signature]", italics: true, size: 22, font: "Arial", color: "888888" })],
+          spacing: { before: 200, after: 100 },
+        })
+      );
+      continue;
+    }
+
+    // Bold lines (offer amount)
+    if (trimmed.startsWith("Amount paid to Seller:")) {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: trimmed, bold: true, size: 22, font: "Arial" })],
+          spacing: { before: 200, after: 200 },
+        })
+      );
+      continue;
+    }
+
+    // Regular text
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: trimmed, size: 22, font: "Arial" })],
+        spacing: { after: 100 },
+      })
+    );
+  }
+
+  return children;
+}
+
+function parseAboutMeToDocx(text) {
+  const lines = text.split("\n");
+  const children = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      children.push(new Paragraph({ spacing: { after: 100 } }));
+      continue;
+    }
+
+    // Title
+    if (trimmed.startsWith("Who is Greg Francis")) {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: trimmed, bold: true, size: 26, font: "Arial" })],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+        })
+      );
+      continue;
+    }
+
+    // Section headers
+    if (trimmed === "A Fair & Simple Process" || trimmed === "Flexible & Creative Solutions" || trimmed === "Let's Talk") {
+      children.push(
+        new Paragraph({
+          children: [new TextRun({ text: trimmed, bold: true, size: 22, font: "Arial" })],
+          spacing: { before: 300, after: 100 },
+        })
+      );
+      continue;
+    }
+
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: trimmed, size: 22, font: "Arial" })],
+        spacing: { after: 100 },
+      })
+    );
+  }
+
+  return children;
+}
+
+async function generateMultiSectionDoc(sections, fileName, docType, dealName) {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const datePrefix = `${yy}${mm}${dd}`;
+
+  const safeName = fileName || `${dealName || "Contract"} - ${docType || "Agreement"}`;
+  const fullName = `${datePrefix} ${safeName}.docx`;
+
+  const docSections = [];
+
+  for (const section of sections) {
+    let children;
+    let hasHeader = false;
+
+    if (section.type === "cover-letter") {
+      children = parseCoverLetterToDocx(section.content);
+    } else if (section.type === "about-me") {
+      children = parseAboutMeToDocx(section.content);
+    } else {
+      // Contract body
+      const titleMap = {
+        "offer": "PURCHASE AGREEMENT",
+        "purchase-agreement": "PURCHASE AND SALE AGREEMENT",
+        "amendment": "AMENDMENT TO PURCHASE AND SALE AGREEMENT",
+        "extension": "EXTENSION OF TIME",
+        "cancellation": "CANCELLATION OF PURCHASE AGREEMENT",
+        "assignment": "ASSIGNMENT OF PURCHASE AND SALE AGREEMENT",
+      };
+      const title = titleMap[docType] || "AGREEMENT";
+      children = parseContractToDocx(section.content, title);
+      hasHeader = true;
+    }
+
+    const sectionDef = {
+      properties: {
+        page: {
+          margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
+        },
+      },
+      children,
+    };
+
+    // Only contract sections get CONFIDENTIAL header
+    if (hasHeader) {
+      sectionDef.headers = {
+        default: new Header({
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "CONFIDENTIAL", italics: true, size: 18, font: "Times New Roman", color: "888888" })],
+              alignment: AlignmentType.RIGHT,
+            }),
+          ],
+        }),
+      };
+    }
+
+    // All sections get page numbers
+    sectionDef.footers = {
+      default: new Footer({
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({ text: "Page ", size: 18, font: "Times New Roman" }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 18, font: "Times New Roman" }),
+              new TextRun({ text: " of ", size: 18, font: "Times New Roman" }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, font: "Times New Roman" }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+        ],
+      }),
+    };
+
+    docSections.push(sectionDef);
+  }
+
+  const doc = new Document({ sections: docSections });
+  const buffer = await Packer.toBuffer(doc);
+
+  // Upload to Drive
+  const contractsFolderId = await drive.findOrCreateFolder("Contracts");
+  const draftsFolderId = await drive.findOrCreateFolder("Drafts", contractsFolderId);
+  let targetFolderId = draftsFolderId;
+  if (dealName) {
+    targetFolderId = await drive.findOrCreateFolder(dealName, draftsFolderId);
+  }
+
+  const driveObj = drive.getDrive();
+  const res = await driveObj.files.create({
+    resource: { name: fullName, parents: [targetFolderId] },
+    media: {
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      body: require("stream").Readable.from([buffer]),
+    },
+    fields: "id, name, webViewLink",
+  });
+
+  return {
+    id: res.data.id,
+    name: res.data.name,
+    link: res.data.webViewLink,
+    folder: dealName ? `Contracts/Drafts/${dealName}` : "Contracts/Drafts",
+    size: buffer.length,
+    note: `"${fullName}" uploaded to Google Drive.`,
+  };
+}
+
 module.exports = {
   listTemplates,
   readTemplate,
   searchPrecedent,
   generateContractDoc,
+  generateMultiSectionDoc,
 };

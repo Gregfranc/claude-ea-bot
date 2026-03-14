@@ -513,23 +513,28 @@ const OWNER_TOOLS = [
       required: ["decision", "reasoning", "context"],
     },
   },
-  // --- Contract Drafting ---
+  // --- Contract Drafting (Template-Based) ---
   {
     name: "draft_contract",
-    description: "Draft a real estate contract. Runs a specialized subagent that searches precedent, gathers deal context, drafts with attorney-grade language, validates, and uploads a .docx to Drive. Use when Greg asks to draft, write, or create any contract, amendment, extension, assignment, or agreement.",
+    description: "Draft a contract using templates. Two steps: (1) call with step 'gather' to pull deal data and see what fields are missing. (2) After collecting missing fields from Greg, call with step 'generate' to create the .docx. For offers, extensions, and cancellations, uses templates. For other types, falls back to AI drafting.",
     input_schema: {
       type: "object",
       properties: {
         deal_name: { type: "string", description: "Deal name (e.g. 'Cumley', 'Traditions North', 'Innes')" },
-        doc_type: { type: "string", enum: ["purchase-agreement", "amendment", "extension", "assignment", "lot-sale", "option", "earnest-money"], description: "Type of document to draft" },
-        terms: { type: "string", description: "Specific terms, instructions, or context from Greg (price, dates, parties, special conditions)" },
+        doc_type: { type: "string", enum: ["offer", "extension", "cancellation", "purchase-agreement", "amendment", "assignment", "lot-sale", "option", "earnest-money"], description: "Type of document" },
+        state: { type: "string", enum: ["WA", "OR", "CA", "ID", "NV"], description: "State for template selection" },
+        step: { type: "string", enum: ["gather", "generate"], description: "'gather' to check data, 'generate' to create doc. Default: gather." },
+        fields: { type: "object", description: "Merge field values for generate step (seller_name, purchase_price, parcel_number, etc.)" },
+        include_cover_letter: { type: "boolean", description: "Include cover letter page (default true)" },
+        include_about_me: { type: "boolean", description: "Include about me page (default true)" },
+        custom_terms: { type: "string", description: "Special terms or conditions to add" },
       },
       required: ["deal_name", "doc_type"],
     },
   },
   {
     name: "generate_contract_doc",
-    description: "Convert already-written contract text to a .docx file and upload to Drive. Use only when Greg provides contract text directly and just needs it formatted. For drafting new contracts, use draft_contract instead.",
+    description: "Convert already-written contract text to a .docx file and upload to Drive. Use only when Greg provides contract text directly and just needs it formatted.",
     input_schema: {
       type: "object",
       properties: {

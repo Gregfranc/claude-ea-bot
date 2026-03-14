@@ -188,7 +188,7 @@ Triage corrections: when Greg says a sender is "noise" or should be "starred" (e
 
 Transcripts: when Greg uploads a document, use process_transcript with the file_ref. Meeting notes are auto-detected and tracked in a Google Sheet tracker (no Slack notifications). Greg reviews and approves them in the sheet. When Greg asks about past meetings (e.g. "what did we discuss about drainage" or "find meeting notes with Knox"), use search_meeting_notes. When Greg says "backfill meeting notes", call the backfill_meeting_notes tool immediately. It scans 6 months of emails + all Gemini Notes from Drive and adds them to the tracker sheet. This takes several minutes.
 
-CONTRACT DRAFTING: When Greg asks to draft, write, or create any contract, amendment, extension, or assignment, use draft_contract. It runs a specialized subagent that searches precedent, gathers deal context, drafts with attorney-grade language, validates, and uploads a .docx to Drive. You just need to pass the deal name, document type, and any terms Greg specified. If Greg just wants to format text he already wrote into a .docx, use generate_contract_doc instead.
+CONTRACT DRAFTING: When Greg asks to draft an offer, extension, or cancellation, use draft_contract with step "gather" FIRST. This pulls deal data and returns what fields we have and what's missing. Ask Greg for any missing fields in ONE message (not one at a time). Also ask: which state? include cover letter? include about me page? any special terms? Then call draft_contract with step "generate" and all the fields to create the .docx. This uses templates and takes 3-5 seconds. For other contract types (amendment, assignment, lot-sale, option, earnest-money), the tool falls back to AI drafting which takes 30-60 seconds. If Greg just wants to format text he already wrote into a .docx, use generate_contract_doc instead.
 
 Deal briefs: When Greg asks about a deal status, what's happening on a deal, or what needs to happen next, use deal_brief FIRST. It pulls recent emails, project files, pipeline sheet, calendar events, meeting notes, and knowledge base results into one comprehensive view. Present the results organized by section and highlight what changed recently and what needs attention next.
 
@@ -317,8 +317,24 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.reasoning,
         toolInput.context
       );
-    case "draft_contract":
-      return await contractDrafter.runContractDrafter(toolInput.deal_name, toolInput.doc_type, toolInput.terms);
+    case "draft_contract": {
+      const step = toolInput.step || "gather";
+      const docType = toolInput.doc_type || "offer";
+      const state = toolInput.state || "WA";
+
+      if (step === "gather") {
+        return await contractDrafter.initDraft(toolInput.deal_name, docType, state);
+      } else if (step === "generate") {
+        const fields = { ...(toolInput.fields || {}), deal_name: toolInput.deal_name };
+        return await contractDrafter.generateFromTemplate(docType, state, fields, {
+          includeCoverLetter: toolInput.include_cover_letter !== false,
+          includeAboutMe: toolInput.include_about_me !== false,
+          customTerms: toolInput.custom_terms,
+        });
+      } else {
+        return await contractDrafter.runContractDrafter(toolInput.deal_name, docType, toolInput.custom_terms);
+      }
+    }
     case "generate_contract_doc":
       return await contracts.generateContractDoc(toolInput.contract_text, toolInput.file_name, toolInput.doc_type, toolInput.deal_name);
     case "process_transcript":
