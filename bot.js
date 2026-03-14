@@ -23,6 +23,7 @@ const dealBrief = require("./tools/deal-brief");
 const driveWatcher = require("./tools/drive-watcher");
 const contractDrafter = require("./tools/subagents/contract-drafter");
 const ghl = require("./tools/ghl");
+const quo = require("./tools/quo");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -361,6 +362,11 @@ async function executeTool(toolName, toolInput, userId) {
       return await meetingNotes.searchMeetingNotes(toolInput.query, permissions.isOwner(userId));
     case "backfill_meeting_notes":
       return await meetingNotes.backfillMeetingNotes((msg) => console.log(`[Backfill] ${msg}`));
+    // --- Quo (phone system) tools ---
+    case "quo_search":
+      return await quo.searchQuoActivity(toolInput.query);
+    case "quo_backfill":
+      return await quo.backfillQuo(toolInput.days_back || 30, (msg) => console.log(`[Quo Backfill] ${msg}`));
     // --- Deal Brief tools ---
     case "deal_brief":
       return await dealBrief.getDealBrief(toolInput.deal_name, toolInput.days_back || 7);
@@ -899,7 +905,8 @@ async function runAutoTriage() {
   try {
     const emailReports = await meetingNotes.checkRecentMeetingEmails();
     const geminiReports = await meetingNotes.checkGeminiNotes();
-    const added = [...emailReports, ...geminiReports].filter((r) => r.success);
+    const dropReports = await meetingNotes.checkDropFolder();
+    const added = [...emailReports, ...geminiReports, ...dropReports].filter((r) => r.success);
     if (added.length > 0) {
       console.log(`[Meeting Notes] Added ${added.length} to inbox sheet.`);
     }
@@ -1332,6 +1339,48 @@ async function runRagSync() {
   }
 }
 
+// Quo (phone system) polling: every 15 min during daytime (same cadence as email triage)
+const QUO_POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const QUO_POLL_NIGHT_INTERVAL = 60 * 60 * 1000; // 1 hour overnight
+let quoPollTimer = null;
+
+function scheduleNextQuoPoll() {
+  if (quoPollTimer) clearTimeout(quoPollTimer);
+  const hour = getCSTHour();
+  const interval = (hour >= DAY_START_HOUR && hour < DAY_END_HOUR)
+    ? QUO_POLL_INTERVAL
+    : QUO_POLL_NIGHT_INTERVAL;
+
+  quoPollTimer = setTimeout(async () => {
+    await runQuoPoll();
+    scheduleNextQuoPoll();
+  }, interval);
+}
+
+async function runQuoPoll() {
+  try {
+    console.log("[Quo] Running scheduled poll...");
+    const results = await quo.pollQuo();
+    if (results.calls > 0 || results.sms > 0) {
+      console.log(`[Quo] Found ${results.calls} calls, ${results.sms} SMS threads.`);
+      // DM Greg if new deal-relevant content was captured
+      try {
+        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+        let msg = `[Quo] Captured`;
+        if (results.calls > 0) msg += ` ${results.calls} call transcript${results.calls > 1 ? "s" : ""}`;
+        if (results.calls > 0 && results.sms > 0) msg += ` and`;
+        if (results.sms > 0) msg += ` ${results.sms} SMS thread${results.sms > 1 ? "s" : ""}`;
+        msg += `. Added to meeting notes tracker.`;
+        await app.client.chat.postMessage({ channel: dmChannel.channel.id, text: msg });
+      } catch (dmErr) {
+        console.error("[Quo] DM error:", dmErr.message);
+      }
+    }
+  } catch (err) {
+    console.error("[Quo] Poll error:", err.message);
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -1389,5 +1438,17 @@ async function runRagSync() {
     console.log("[RAG] Drive sync scheduled every 1 hour (6am-10pm CST).");
   } else {
     console.log("[RAG] Skipping Drive sync (PINECONE_API_KEY or GEMINI_API_KEY not set).");
+  }
+
+  // Quo phone system polling: calls + SMS -> meeting notes tracker
+  if (process.env.QUO_API_KEY) {
+    setTimeout(async () => {
+      console.log("[Quo] Running initial poll...");
+      await runQuoPoll();
+    }, 20000); // 20s after startup
+    scheduleNextQuoPoll();
+    console.log("[Quo] Phone system polling active (every 15 min daytime, 60 min overnight).");
+  } else {
+    console.log("[Quo] Skipping phone polling (QUO_API_KEY not set).");
   }
 })();

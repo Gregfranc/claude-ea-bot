@@ -1,15 +1,33 @@
 // Meeting notes detection, deduplication, summarization, and filing
-// Captures from: email (Read AI, Notta, etc.) and Google Drive (Gemini Notes)
+// Captures from: email (Read AI, Notta, etc.), Google Drive (Gemini Notes), and Drive Drop folder
 // Flow: detect -> summarize -> save to inbox folder -> add row to tracker sheet
 // Greg reviews sheet, changes project if needed, marks "Approved" -> bot files to deal folder
 const Anthropic = require("@anthropic-ai/sdk");
+const OpenAI = require("openai");
 const gmail = require("./gmail");
 const drive = require("./drive");
 const sheets = require("./sheets");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
+const https = require("https");
+const http = require("http");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+// Audio MIME types for Whisper transcription
+const DROP_AUDIO_MIMES = [
+  "audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav",
+  "audio/x-m4a", "audio/mp3", "audio/aac", "audio/flac",
+  "video/webm", "video/mp4",
+];
+
+const DROP_AUDIO_EXTENSIONS = [
+  ".m4a", ".mp3", ".wav", ".webm", ".ogg", ".aac", ".flac", ".mp4",
+];
 
 // --- Constants ---
 const MEETING_REPORT_SENDERS = [
@@ -711,6 +729,183 @@ async function checkGeminiNotes() {
   return results;
 }
 
+// --- Check Drive "Transcript Drop" folder for new files ---
+// Greg drops audio recordings (Voice Memos, Notta exports) or transcript files here.
+// Audio files get transcribed via Whisper, text/PDF/docs get read directly.
+// All get summarized, added to tracker sheet, and moved to inbox folder.
+
+async function ensureDropFolder() {
+  let config = loadConfig();
+  if (!config.dropFolderId) {
+    config.dropFolderId = await drive.findOrCreateFolder("Transcript Drop");
+    saveConfig(config);
+    console.log("[Meeting Notes] Created 'Transcript Drop' folder in Drive.");
+  }
+  if (!config.inboxFolderId) {
+    config.inboxFolderId = await drive.findOrCreateFolder("Meeting Notes Inbox");
+    saveConfig(config);
+  }
+  return config;
+}
+
+function isAudioFile(mimeType, fileName) {
+  if (mimeType && DROP_AUDIO_MIMES.some((m) => mimeType.startsWith(m.split("/")[0] + "/" + m.split("/")[1]))) return true;
+  if (mimeType && (mimeType.startsWith("audio/") || mimeType.startsWith("video/"))) return true;
+  const ext = path.extname(fileName || "").toLowerCase();
+  return DROP_AUDIO_EXTENSIONS.includes(ext);
+}
+
+async function downloadDriveFile(driveClient, fileId) {
+  const res = await driveClient.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" }
+  );
+  return Buffer.from(res.data);
+}
+
+async function transcribeDropAudio(driveClient, file) {
+  if (!openai) {
+    console.error("[Meeting Notes] No OpenAI API key, cannot transcribe audio.");
+    return null;
+  }
+  try {
+    console.log(`[Meeting Notes] Transcribing audio: ${file.name} (${file.mimeType})`);
+    const buffer = await downloadDriveFile(driveClient, file.id);
+    if (buffer.length < 100) {
+      console.error(`[Meeting Notes] Audio file too small: ${file.name} (${buffer.length} bytes)`);
+      return null;
+    }
+
+    // Write to temp file for Whisper API
+    const ext = path.extname(file.name || ".webm") || ".webm";
+    const tmpPath = path.join(os.tmpdir(), `drop-${Date.now()}${ext}`);
+    fs.writeFileSync(tmpPath, buffer);
+
+    const transcription = await openai.audio.transcriptions.create({
+      model: "whisper-1",
+      file: fs.createReadStream(tmpPath),
+    });
+
+    // Clean up temp file
+    try { fs.unlinkSync(tmpPath); } catch {}
+
+    console.log(`[Meeting Notes] Transcribed ${file.name}: ${(transcription.text || "").length} chars`);
+    return transcription.text || null;
+  } catch (err) {
+    console.error(`[Meeting Notes] Whisper error for ${file.name}: ${err.message}`);
+    return null;
+  }
+}
+
+async function checkDropFolder() {
+  const results = [];
+
+  try {
+    const config = await ensureDropFolder();
+    const driveClient = drive.getDrive();
+
+    // List files in the drop folder
+    const files = await drive.listFolder(config.dropFolderId, 20);
+    if (!files || files.length === 0) return results;
+
+    console.log(`[Meeting Notes] Found ${files.length} files in Transcript Drop folder.`);
+
+    for (const file of files) {
+      // Skip folders
+      if (file.mimeType === "application/vnd.google-apps.folder") continue;
+
+      try {
+        let content = "";
+        let source = "Drive Drop";
+
+        if (isAudioFile(file.mimeType, file.name)) {
+          // Audio: transcribe via Whisper
+          content = await transcribeDropAudio(driveClient, file);
+          source = "Drive Drop (Audio)";
+          if (!content) {
+            console.log(`[Meeting Notes] Could not transcribe: ${file.name}`);
+            continue;
+          }
+        } else {
+          // Text/PDF/Doc: read via drive.readFile
+          const fileData = await drive.readFile(file.id);
+          content = fileData.content || "";
+          if (content.startsWith("(Binary file") || content.startsWith("(PDF could not") || content.startsWith("(Could not extract")) {
+            console.log(`[Meeting Notes] Unreadable drop file: ${file.name}`);
+            continue;
+          }
+        }
+
+        if (!content || content.trim().length < 50) {
+          console.log(`[Meeting Notes] Drop file too short: ${file.name} (${(content || "").length} chars)`);
+          continue;
+        }
+
+        // Extract title from filename
+        const title = (file.name || "recording")
+          .replace(/\.[^.]+$/, "")
+          .replace(/[_-]+/g, " ")
+          .trim();
+        const date = new Date(file.modifiedTime).toISOString().split("T")[0];
+
+        // Check dedup
+        if (isDuplicate(date, title)) {
+          console.log(`[Meeting Notes] Drop file already logged: ${title}`);
+          // Still move it out of drop folder
+          try {
+            await driveClient.files.update({
+              fileId: file.id,
+              addParents: config.inboxFolderId,
+              removeParents: config.dropFolderId,
+              fields: "id, parents",
+            });
+          } catch {}
+          continue;
+        }
+
+        // Summarize and classify
+        const parsed = await summarizeMeetingContent(content, title, source);
+
+        // Add to inbox (sheet + Drive)
+        const inboxResult = await addToInbox({
+          driveFileId: file.id,
+          meetingTitle: parsed.title || title,
+          meetingDate: parsed.date || date,
+          source,
+          project: parsed.project,
+          suggestedFileName: parsed.suggestedFileName,
+          summary: parsed.summary,
+          actionItems: parsed.actionItems,
+          keyDecisions: parsed.keyDecisions,
+          participants: parsed.participants,
+          fullContent: content,
+        });
+
+        // Move file from drop folder to inbox folder
+        try {
+          await driveClient.files.update({
+            fileId: file.id,
+            addParents: config.inboxFolderId,
+            removeParents: config.dropFolderId,
+            fields: "id, parents",
+          });
+          console.log(`[Meeting Notes] Moved ${file.name} to inbox folder.`);
+        } catch (moveErr) {
+          console.error(`[Meeting Notes] Could not move ${file.name}: ${moveErr.message}`);
+        }
+
+        results.push(inboxResult);
+      } catch (fileErr) {
+        console.error(`[Meeting Notes] Drop file error (${file.name}): ${fileErr.message}`);
+      }
+    }
+  } catch (err) {
+    console.error("[Meeting Notes] Drop folder error:", err.message);
+  }
+
+  return results;
+}
+
 // --- Search meeting notes in tracker sheet ---
 // ownerOnly=true shows all notes, ownerOnly=false shows only "Public" notes
 async function searchMeetingNotes(query, ownerOnly = true) {
@@ -953,9 +1148,11 @@ function getTrackerUrl() {
 module.exports = {
   checkRecentMeetingEmails,
   checkGeminiNotes,
+  checkDropFolder,
   processApprovedNotes,
   searchMeetingNotes,
   backfillMeetingNotes,
   isDuplicate,
   getTrackerUrl,
+  addToInbox,
 };

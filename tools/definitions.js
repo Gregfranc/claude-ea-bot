@@ -444,6 +444,28 @@ const OWNER_TOOLS = [
     },
   },
   {
+    name: "quo_search",
+    description: "Search Quo (phone) call transcripts and SMS threads. Searches the meeting notes tracker for Quo-sourced entries.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search terms (e.g. 'Tanner', 'WASem', 'closing')" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "quo_backfill",
+    description: "One-time scan: process historical Quo calls and SMS from the last N days into the tracker sheet. Takes several minutes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        days_back: { type: "number", description: "How many days back to scan (default 30)" },
+      },
+      required: [],
+    },
+  },
+  {
     name: "read_spreadsheet",
     description: "Read Google Sheet data by URL or ID.",
     input_schema: {
