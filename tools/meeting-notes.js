@@ -4,6 +4,7 @@
 // Greg reviews sheet, changes project if needed, marks "Approved" -> bot files to deal folder
 const Anthropic = require("@anthropic-ai/sdk");
 const OpenAI = require("openai");
+const JSZip = require("jszip");
 const gmail = require("./gmail");
 const drive = require("./drive");
 const sheets = require("./sheets");
@@ -797,6 +798,56 @@ async function transcribeDropAudio(driveClient, file) {
   }
 }
 
+// Extract text content from a zip file (Notta exports, etc.)
+// Returns array of { name, content } for each readable file inside
+const ZIP_TEXT_EXTENSIONS = [".txt", ".md", ".srt", ".vtt", ".csv", ".json", ".docx"];
+
+async function extractZipContents(buffer) {
+  const extracted = [];
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    for (const [filename, entry] of Object.entries(zip.files)) {
+      if (entry.dir) continue;
+      const ext = path.extname(filename).toLowerCase();
+      // Skip non-text files inside zip (images, etc.)
+      if (!ZIP_TEXT_EXTENSIONS.includes(ext) && !ext.startsWith(".txt")) continue;
+      try {
+        const content = await entry.async("string");
+        if (content && content.trim().length >= 50) {
+          extracted.push({ name: filename, content: content.trim() });
+        }
+      } catch (entryErr) {
+        console.log(`[Meeting Notes] Could not read zip entry ${filename}: ${entryErr.message}`);
+      }
+    }
+
+    // If no text files found, check for audio files inside zip
+    if (extracted.length === 0) {
+      for (const [filename, entry] of Object.entries(zip.files)) {
+        if (entry.dir) continue;
+        const ext = path.extname(filename).toLowerCase();
+        if (DROP_AUDIO_EXTENSIONS.includes(ext)) {
+          try {
+            const audioBuffer = await entry.async("nodebuffer");
+            extracted.push({ name: filename, audioBuffer });
+          } catch (entryErr) {
+            console.log(`[Meeting Notes] Could not extract audio from zip ${filename}: ${entryErr.message}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[Meeting Notes] Zip extraction error: ${err.message}`);
+  }
+  return extracted;
+}
+
+function isZipFile(mimeType, fileName) {
+  if (mimeType && (mimeType.includes("zip") || mimeType.includes("compressed"))) return true;
+  const ext = path.extname(fileName || "").toLowerCase();
+  return ext === ".zip";
+}
+
 async function checkDropFolder() {
   const results = [];
 
@@ -815,6 +866,81 @@ async function checkDropFolder() {
       if (file.mimeType === "application/vnd.google-apps.folder") continue;
 
       try {
+        // --- Zip files: extract contents and process each entry ---
+        if (isZipFile(file.mimeType, file.name)) {
+          console.log(`[Meeting Notes] Processing zip: ${file.name}`);
+          const buffer = await downloadDriveFile(driveClient, file.id);
+          const entries = await extractZipContents(buffer);
+
+          if (entries.length === 0) {
+            console.log(`[Meeting Notes] No readable files in zip: ${file.name}`);
+          }
+
+          for (const entry of entries) {
+            try {
+              let entryContent = "";
+              let entrySource = "Drive Drop (Notta Zip)";
+
+              if (entry.audioBuffer) {
+                // Audio file inside zip: transcribe via Whisper
+                if (!openai) continue;
+                const ext = path.extname(entry.name) || ".webm";
+                const tmpPath = path.join(os.tmpdir(), `zip-audio-${Date.now()}${ext}`);
+                fs.writeFileSync(tmpPath, entry.audioBuffer);
+                const transcription = await openai.audio.transcriptions.create({
+                  model: "whisper-1",
+                  file: fs.createReadStream(tmpPath),
+                });
+                try { fs.unlinkSync(tmpPath); } catch {}
+                entryContent = transcription.text || "";
+                entrySource = "Drive Drop (Zip Audio)";
+              } else {
+                entryContent = entry.content;
+              }
+
+              if (!entryContent || entryContent.trim().length < 50) continue;
+
+              const entryTitle = (entry.name || "transcript")
+                .replace(/\.[^.]+$/, "")
+                .replace(/[_-]+/g, " ")
+                .trim();
+              const entryDate = new Date(file.modifiedTime).toISOString().split("T")[0];
+
+              if (isDuplicate(entryDate, entryTitle)) continue;
+
+              const parsed = await summarizeMeetingContent(entryContent, entryTitle, entrySource);
+              const inboxResult = await addToInbox({
+                driveFileId: file.id,
+                meetingTitle: parsed.title || entryTitle,
+                meetingDate: parsed.date || entryDate,
+                source: entrySource,
+                project: parsed.project,
+                suggestedFileName: parsed.suggestedFileName,
+                summary: parsed.summary,
+                actionItems: parsed.actionItems,
+                keyDecisions: parsed.keyDecisions,
+                participants: parsed.participants,
+                fullContent: entryContent,
+              });
+              results.push(inboxResult);
+            } catch (entryErr) {
+              console.error(`[Meeting Notes] Zip entry error (${entry.name}): ${entryErr.message}`);
+            }
+          }
+
+          // Move zip out of drop folder
+          try {
+            await driveClient.files.update({
+              fileId: file.id,
+              addParents: config.inboxFolderId,
+              removeParents: config.dropFolderId,
+              fields: "id, parents",
+            });
+          } catch {}
+          continue;
+        }
+
+        // --- Regular files (not zip) ---
         let content = "";
         let source = "Drive Drop";
 
