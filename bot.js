@@ -24,6 +24,7 @@ const driveWatcher = require("./tools/drive-watcher");
 const contractDrafter = require("./tools/subagents/contract-drafter");
 const ghl = require("./tools/ghl");
 const quo = require("./tools/quo");
+const subscriptions = require("./tools/subscriptions");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -307,6 +308,18 @@ async function executeTool(toolName, toolInput, userId) {
       return await pipeline.getPipelineSummary();
     case "lookup_deal":
       return await pipeline.lookupDeal(toolInput.deal_name);
+    // --- Subscription tracking tools ---
+    case "list_subscriptions":
+      return subscriptions.listSubscriptions();
+    case "upcoming_renewals": {
+      const upcoming = subscriptions.getUpcomingRenewals(toolInput.days_ahead || 7);
+      if (upcoming.length === 0) return "No subscriptions renewing in that timeframe.";
+      return upcoming.map(s => `${s.name}: ${s.amount} (${s.cycle}) — renews ${s.next_renewal} (${s.days_until} days)\n  Cancel: ${s.cancel_url}`).join("\n\n");
+    }
+    case "mark_subscription_cancel":
+      return subscriptions.markForCancellation(toolInput.name);
+    case "mark_subscription_cancelled":
+      return subscriptions.markCancelled(toolInput.name);
     case "update_deal":
       return await pipeline.updateDeal(toolInput.deal_name, toolInput.field, toolInput.value);
     case "read_spreadsheet":
@@ -1253,6 +1266,82 @@ async function runDealDigest() {
   }
 }
 
+// --- Subscription Scanner ---
+// Scans Gmail daily at 7am CST for subscription/renewal emails, updates tracker, sends alerts
+const SUBSCRIPTION_SCAN_HOUR = 7;
+let subscriptionTimer = null;
+
+function getNextSubscriptionScanTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  let daysToAdd = 0;
+  if (currentHour > SUBSCRIPTION_SCAN_HOUR || (currentHour === SUBSCRIPTION_SCAN_HOUR && currentMin >= 5)) {
+    daysToAdd = 1;
+  }
+
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(SUBSCRIPTION_SCAN_HOUR, 0, 0, 0);
+  return target.getTime() - cst.getTime();
+}
+
+function scheduleNextSubscriptionScan() {
+  if (subscriptionTimer) clearTimeout(subscriptionTimer);
+  const msUntil = getNextSubscriptionScanTime();
+  subscriptionTimer = setTimeout(async () => {
+    await runSubscriptionScan();
+    scheduleNextSubscriptionScan();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[Subscriptions] Next scan at ${SUBSCRIPTION_SCAN_HOUR}:00 CST (in ${hoursUntil} hours).`);
+}
+
+async function runSubscriptionScan() {
+  try {
+    console.log("[Subscriptions] Running daily subscription scan...");
+    const results = await subscriptions.scanSubscriptions();
+
+    console.log(
+      `[Subscriptions] Scan complete: ${results.new} new, ${results.updated} updated, ${results.reminders_created} reminders created, ${results.errors} errors.`
+    );
+
+    // Check for upcoming renewals (next 7 days) and alert Greg
+    const upcoming = subscriptions.getUpcomingRenewals(7);
+    if (upcoming.length > 0) {
+      const alert = subscriptions.formatRenewalAlert(upcoming);
+      if (alert) {
+        try {
+          const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+          await app.client.chat.postMessage({
+            channel: dmChannel.channel.id,
+            text: alert,
+          });
+        } catch (e) {
+          console.error("[Subscriptions] Could not notify Greg:", e.message);
+        }
+      }
+    }
+
+    // Also alert for any new subscriptions detected
+    if (results.new > 0) {
+      try {
+        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+        await app.client.chat.postMessage({
+          channel: dmChannel.channel.id,
+          text: `*Subscription tracker:* Detected ${results.new} new subscription(s) from email. Say "list subscriptions" to see all tracked subscriptions.`,
+        });
+      } catch (e) {
+        console.error("[Subscriptions] Could not notify Greg:", e.message);
+      }
+    }
+  } catch (err) {
+    console.error("[Subscriptions] Scan error:", err.message);
+  }
+}
+
 // --- Drive Folder Watcher ---
 // Polls deal status folders every 30 min during daytime, detects moves, cascades updates.
 const DRIVE_WATCHER_INTERVAL = 30 * 60 * 1000; // 30 minutes
@@ -1423,6 +1512,9 @@ async function runQuoPoll() {
 
   scheduleNextDealDigest();
   console.log("[DealDigest] Daily deal digest scheduled at 6:15am CST.");
+
+  scheduleNextSubscriptionScan();
+  console.log("[Subscriptions] Daily subscription scan scheduled at 7:00am CST.");
 
   // Run initial Drive watcher scan on startup (after 15s to let other things init)
   setTimeout(async () => {

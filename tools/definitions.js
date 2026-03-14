@@ -903,6 +903,61 @@ const PUBLIC_TOOLS = [
       required: ["deal_name"],
     },
   },
+  {
+    name: "list_subscriptions",
+    description:
+      "List all tracked subscriptions with renewal dates, amounts, and status.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "upcoming_renewals",
+    description:
+      "Get subscriptions renewing within the next N days. Includes cancel links.",
+    input_schema: {
+      type: "object",
+      properties: {
+        days_ahead: {
+          type: "number",
+          description: "Number of days to look ahead (default 7)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "mark_subscription_cancel",
+    description:
+      "Mark a subscription to be cancelled before next renewal. Creates a red reminder.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Subscription name or ID to mark for cancellation",
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "mark_subscription_cancelled",
+    description:
+      "Mark a subscription as already cancelled (removes from active tracking).",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Subscription name or ID that was cancelled",
+        },
+      },
+      required: ["name"],
+    },
+  },
 ];
 
 module.exports = { OWNER_TOOLS, TEAM_TOOLS, PUBLIC_TOOLS };
