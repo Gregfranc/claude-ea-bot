@@ -513,6 +513,64 @@ const OWNER_TOOLS = [
       required: ["decision", "reasoning", "context"],
     },
   },
+  // --- GHL CRM Tools ---
+  {
+    name: "search_contacts",
+    description: "Search GHL CRM contacts by name, email, or phone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search term (name, email, or phone)" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_contact",
+    description: "Get full GHL contact details by contact ID.",
+    input_schema: {
+      type: "object",
+      properties: {
+        contact_id: { type: "string", description: "GHL contact ID" },
+      },
+      required: ["contact_id"],
+    },
+  },
+  {
+    name: "search_deals",
+    description: "Search GHL opportunities/deals by name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Deal name or keyword" },
+        pipeline_id: { type: "string", description: "Pipeline ID to filter (optional)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_deal_notes",
+    description: "Get notes for a contact. Search by deal name first, then pull notes for matching contact.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal or contact name to search" },
+      },
+      required: ["deal_name"],
+    },
+  },
+  {
+    name: "crm_deal_brief",
+    description: "One-call GHL CRM lookup: search contacts + opportunities + notes for a deal name. Returns combined summary.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal or contact name" },
+      },
+      required: ["deal_name"],
+    },
+  },
   // --- Contract Drafting (Template-Based) ---
   {
     name: "draft_contract",
@@ -701,6 +759,52 @@ const TEAM_TOOLS = [
       type: "object",
       properties: {
         deal_name: { type: "string", description: "Deal name or partial match" },
+      },
+      required: ["deal_name"],
+    },
+  },
+  // --- GHL CRM Tools (Team) ---
+  {
+    name: "search_contacts",
+    description: "Search GHL CRM contacts by name, email, or phone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search term (name, email, or phone)" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "search_deals",
+    description: "Search GHL opportunities/deals by name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Deal name or keyword" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_deal_notes",
+    description: "Get notes for a contact. Search by deal name, pull notes for matching contact.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal or contact name to search" },
+      },
+      required: ["deal_name"],
+    },
+  },
+  {
+    name: "crm_deal_brief",
+    description: "One-call GHL CRM lookup: contacts + opportunities + notes for a deal name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deal_name: { type: "string", description: "Deal or contact name" },
       },
       required: ["deal_name"],
     },

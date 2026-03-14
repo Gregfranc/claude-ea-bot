@@ -22,6 +22,7 @@ const contracts = require("./tools/contracts");
 const dealBrief = require("./tools/deal-brief");
 const driveWatcher = require("./tools/drive-watcher");
 const contractDrafter = require("./tools/subagents/contract-drafter");
+const ghl = require("./tools/ghl");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -188,7 +189,9 @@ Triage corrections: when Greg says a sender is "noise" or should be "starred" (e
 
 Transcripts: when Greg uploads a document, use process_transcript with the file_ref. Meeting notes are auto-detected and tracked in a Google Sheet tracker (no Slack notifications). Greg reviews and approves them in the sheet. When Greg asks about past meetings (e.g. "what did we discuss about drainage" or "find meeting notes with Knox"), use search_meeting_notes. When Greg says "backfill meeting notes", call the backfill_meeting_notes tool immediately. It scans 6 months of emails + all Gemini Notes from Drive and adds them to the tracker sheet. This takes several minutes.
 
-CONTRACT DRAFTING: When Greg asks to draft an offer, extension, or cancellation, use draft_contract with step "gather" FIRST. This pulls deal data and returns what fields we have and what's missing. Ask Greg for any missing fields in ONE message (not one at a time). Also ask: which state? include cover letter? include about me page? any special terms? Then call draft_contract with step "generate" and all the fields to create the .docx. This uses templates and takes 3-5 seconds. For other contract types (amendment, assignment, lot-sale, option, earnest-money), the tool falls back to AI drafting which takes 30-60 seconds. If Greg just wants to format text he already wrote into a .docx, use generate_contract_doc instead.
+GHL/CRM: When asked about contacts, leads, deals, or notes, use GHL tools. search_contacts for finding people, get_contact for full details, search_deals for opportunities, get_deal_notes for notes. crm_deal_brief combines all into one call. GHL pulls from Go High Level CRM automatically.
+
+CONTRACT DRAFTING: When Greg asks to draft an offer, extension, or cancellation, use draft_contract with step "gather" FIRST. This pulls deal data from pipeline AND GHL CRM automatically, filling in seller info, property details, and deal terms. It returns what we have and what's still missing. Ask Greg for any missing fields in ONE message (not one at a time). Also confirm: which state? include cover letter? include about me page? any special terms? Then call draft_contract with step "generate" and all the fields to create the .docx. This uses templates and takes 3-5 seconds. For other contract types (amendment, assignment, lot-sale, option, earnest-money), the tool falls back to AI drafting which takes 30-60 seconds. If Greg just wants to format text he already wrote into a .docx, use generate_contract_doc instead.
 
 Deal briefs: When Greg asks about a deal status, what's happening on a deal, or what needs to happen next, use deal_brief FIRST. It pulls recent emails, project files, pipeline sheet, calendar events, meeting notes, and knowledge base results into one comprehensive view. Present the results organized by section and highlight what changed recently and what needs attention next.
 
@@ -201,8 +204,10 @@ Today: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeri
 
 const TEAM_SYSTEM_PROMPT = `You are Claude EA, the GFDev Brain. Speaking with a team member (not Greg). Direct, helpful, 2-3 sentences max. No emojis. No dashes.
 
-Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline, get deal briefs (team_deal_brief).
+Can do: search shared Drive files, search knowledge base (contracts, meeting notes, project docs), check calendar availability (busy/free only), read project files, look up deal pipeline, get deal briefs (team_deal_brief), search GHL CRM contacts (search_contacts), search deals (search_deals), get deal notes (get_deal_notes), get full CRM deal brief (crm_deal_brief).
 Cannot do: email access, calendar event details, write files, take actions on Greg's behalf. Say so plainly if asked.
+
+GHL/CRM: When asked about contacts, leads, deals, or notes, use GHL tools. search_contacts for finding people, search_deals for opportunities, get_deal_notes for notes, crm_deal_brief for everything at once.
 
 Deal briefs: When asked about a deal status, use team_deal_brief FIRST. It pulls project files, pipeline sheet, meeting notes, and knowledge base results into one view. Present the results organized and highlight what needs attention.
 
@@ -317,6 +322,19 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.reasoning,
         toolInput.context
       );
+    // --- GHL CRM tools ---
+    case "search_contacts":
+      return await ghl.searchContacts(toolInput.query, toolInput.limit);
+    case "get_contact":
+      return await ghl.getContact(toolInput.contact_id);
+    case "search_deals":
+      return await ghl.searchOpportunities(toolInput.query, toolInput.pipeline_id);
+    case "get_deal_notes": {
+      const ghlData = await ghl.searchByDeal(toolInput.deal_name);
+      return { contacts: ghlData.contacts, notes: ghlData.notes };
+    }
+    case "crm_deal_brief":
+      return await ghl.crmDealBrief(toolInput.deal_name);
     case "draft_contract": {
       const step = toolInput.step || "gather";
       const docType = toolInput.doc_type || "offer";

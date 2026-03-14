@@ -110,12 +110,24 @@ async function initDraft(dealName, docType, state) {
     } catch { /* ok */ }
   }
 
-  // TODO: GHL contact lookup goes here when integrated
-  // try {
-  //   const ghl = require("../ghl");
-  //   const contact = await ghl.searchByDeal(dealName);
-  //   if (contact) { map GHL fields to gathered; sources.push("ghl"); }
-  // } catch { /* GHL not configured */ }
+  // GHL CRM contact lookup
+  try {
+    const ghl = require("../ghl");
+    if (ghl.isConfigured()) {
+      const ghlData = await ghl.searchByDeal(dealName);
+      if (ghlData.contacts.length > 0) {
+        const contact = ghlData.contacts[0];
+        const ghlFields = ghl.extractContractFields(contact);
+        // Merge GHL fields into gathered (GHL wins over pipeline for contact info)
+        for (const [key, val] of Object.entries(ghlFields)) {
+          if (val) gathered[key] = val;
+        }
+        sources.push("ghl");
+      }
+    }
+  } catch (err) {
+    console.error(`[ContractDrafter] GHL lookup failed: ${err.message}`);
+  }
 
   // Set defaults
   gathered.buyer_name = "GF Development LLC";
