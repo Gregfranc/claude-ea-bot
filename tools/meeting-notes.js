@@ -55,6 +55,7 @@ const KNOWN_PROJECTS = [
 
 const SHEET_HEADERS = [
   "Date",
+  "Uploaded",
   "Title",
   "Source",
   "Summary",
@@ -225,8 +226,10 @@ ${data.keyDecisions || "None"}
     }
 
     // Append row to tracker sheet
+    const uploadedDate = new Date().toISOString().split("T")[0];
     const row = [
       data.meetingDate || datePrefix,
+      uploadedDate,
       data.meetingTitle || fileName,
       data.source || "Unknown",
       (data.summary || "").substring(0, 500),
@@ -238,7 +241,7 @@ ${data.keyDecisions || "None"}
       "Pending",
     ];
 
-    await sheets.appendSheet(config.spreadsheetId, "Sheet1!A:J", [row]);
+    await sheets.appendSheet(config.spreadsheetId, "Sheet1!A:K", [row]);
 
     // Log for dedup
     logMeeting({
@@ -316,10 +319,10 @@ async function processApprovedNotes() {
       }
 
       if (!summaryContent) {
-        // Mark as error in sheet (column J = Status)
+        // Mark as error in sheet (column K = Status)
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!J${row._row}`,
+          `Sheet1!K${row._row}`,
           [["Error: file not found"]]
         );
         continue;
@@ -360,10 +363,10 @@ async function processApprovedNotes() {
           masterFolderId
         );
 
-        // Update sheet status to "Filed" (column J)
+        // Update sheet status to "Filed" (column K)
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!J${row._row}`,
+          `Sheet1!K${row._row}`,
           [["Filed"]]
         );
 
@@ -373,7 +376,7 @@ async function processApprovedNotes() {
         console.error(`[Meeting Notes] Filing error for "${title}": ${err.message}`);
         await sheets.writeSheet(
           config.spreadsheetId,
-          `Sheet1!J${row._row}`,
+          `Sheet1!K${row._row}`,
           [["Error: " + err.message.substring(0, 50)]]
         );
       }
