@@ -167,18 +167,49 @@ async function readFile(fileId) {
   );
   const buffer = Buffer.from(res.data);
 
-  // PDF: proper text extraction using pdf-parse
+  // PDF: text extraction with Gemini OCR fallback for scanned docs
   if (mimeType === "application/pdf") {
+    // Try pdf-parse first (fast, free, handles text-based PDFs)
+    let pdfText = "";
+    let pages = 0;
     try {
       const data = await pdfParse(buffer);
-      const text = data.text.trim();
-      if (text.length > 50) {
-        return { name, mimeType, content: text.substring(0, 5000), pages: data.numpages, note: `Extracted ${data.numpages} pages (truncated to 5000 chars). Full text available if needed.` };
-      }
-      return { name, mimeType, content: "(PDF appears to be scanned/image-based with no extractable text.)", size: buffer.length, pages: data.numpages };
-    } catch (err) {
-      return { name, mimeType, content: `(PDF parsing failed: ${err.message})`, size: buffer.length };
+      pdfText = data.text.trim();
+      pages = data.numpages;
+    } catch {
+      // pdf-parse failed, will try Gemini
     }
+
+    if (pdfText.length > 50) {
+      return { name, mimeType, content: pdfText.substring(0, 10000), pages, note: `Extracted ${pages} pages (truncated to 10000 chars).` };
+    }
+
+    // Fallback: Gemini vision for scanned/image PDFs
+    if (process.env.GEMINI_API_KEY && buffer.length < 20 * 1024 * 1024) {
+      try {
+        const { GoogleGenAI } = require("@google/genai");
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const base64 = buffer.toString("base64");
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-lite",
+          contents: [{
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: "application/pdf", data: base64 } },
+              { text: "Extract ALL text from this PDF document exactly as written. Include every detail: names, dates, dollar amounts, addresses, legal terms, deadlines, and conditions. Return only the extracted text, no commentary." },
+            ],
+          }],
+        });
+        const extracted = (response.text || "").trim();
+        if (extracted.length > 50) {
+          return { name, mimeType, content: extracted.substring(0, 10000), pages: pages || "unknown", note: "Extracted via Gemini OCR (scanned PDF)." };
+        }
+      } catch (err) {
+        console.error(`[Drive] Gemini PDF fallback failed for ${name}: ${err.message}`);
+      }
+    }
+
+    return { name, mimeType, content: "(PDF could not be read. May be password-protected or corrupted.)", size: buffer.length, pages };
   }
 
   // Text-based files
