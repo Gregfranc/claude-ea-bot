@@ -129,6 +129,58 @@ async function initDraft(dealName, docType, state) {
     console.error(`[ContractDrafter] GHL lookup failed: ${err.message}`);
   }
 
+  // For extensions: search Drive/knowledge base for the original contract
+  if (docType === "extension") {
+    try {
+      // Search knowledge base for original contract details
+      if (rag) {
+        const ragResults = await rag.search(`${dealName} purchase agreement contract`, { deal: dealName }, 3);
+        if (ragResults && ragResults.results && ragResults.results.length > 0) {
+          for (const result of ragResults.results) {
+            const text = result.text || result.content || "";
+            // Extract property address
+            if (!gathered.property_address) {
+              const addrMatch = text.match(/(?:Property\s*(?:Address)?|Located\s*at)[:\s]+([^\n,]+)/i);
+              if (addrMatch) gathered.property_address = addrMatch[1].trim();
+            }
+            // Extract parcel number
+            if (!gathered.parcel_number) {
+              const parcelMatch = text.match(/(?:Parcel|APN|Tax\s*(?:Lot|ID))[:\s#]*([A-Z0-9\-\.]+)/i);
+              if (parcelMatch) gathered.parcel_number = parcelMatch[1].trim();
+            }
+            // Extract seller name
+            if (!gathered.seller_name) {
+              const sellerMatch = text.match(/(?:SELLER|Seller)[:\s]+([^\n]+?)(?:\n|$)/);
+              if (sellerMatch) gathered.seller_name = sellerMatch[1].trim();
+            }
+            // Extract original agreement date
+            if (!gathered.original_agreement_date) {
+              const dateMatch = text.match(/(?:dated|executed|entered\s*into)[:\s]+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+              if (dateMatch) gathered.original_agreement_date = dateMatch[1].trim();
+            }
+          }
+          sources.push("knowledge-base");
+        }
+      }
+    } catch (err) {
+      console.error(`[ContractDrafter] Knowledge base search failed: ${err.message}`);
+    }
+
+    // Search Drive for original contract file
+    try {
+      const driveResults = await drive.searchFiles(`${dealName} purchase agreement`);
+      if (driveResults && driveResults.files && driveResults.files.length > 0) {
+        sources.push("drive-search");
+        // Store file IDs for reference
+        gathered._original_contract_files = driveResults.files.slice(0, 3).map(f => ({
+          name: f.name, id: f.id, modified: f.modifiedTime,
+        }));
+      }
+    } catch (err) {
+      console.error(`[ContractDrafter] Drive search failed: ${err.message}`);
+    }
+  }
+
   // Set defaults
   gathered.buyer_name = "GF Development LLC";
   gathered.today_date = templateEngine.formatDate(new Date());

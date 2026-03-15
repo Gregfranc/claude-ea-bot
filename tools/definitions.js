@@ -596,7 +596,7 @@ const OWNER_TOOLS = [
   // --- Contract Drafting (Template-Based) ---
   {
     name: "draft_contract",
-    description: "Draft a contract using templates. Two steps: (1) call with step 'gather' to pull deal data and see what fields are missing. (2) After collecting missing fields from Greg, call with step 'generate' to create the .docx. For offers, extensions, and cancellations, uses templates. For other types, falls back to AI drafting.",
+    description: "Draft a contract using templates. IMPORTANT: Before calling this, use deal_brief and search_knowledge_base to find deal data first. Pre-fill as many fields as possible. Two steps: (1) 'gather' pulls deal data from pipeline, CRM, Drive, and knowledge base. (2) 'generate' creates the .docx. For extensions: the gather step searches for the original contract automatically. Only ask Greg for NEW information (new dates, term changes) not stuff you already found. Do NOT dump a list of every field. Ask conversationally.",
     input_schema: {
       type: "object",
       properties: {
