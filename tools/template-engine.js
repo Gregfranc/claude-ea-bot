@@ -114,14 +114,48 @@ function validateMerge(content) {
 // --- Get Required Fields ---
 
 function getRequiredFields(templateContent) {
-  const fields = new Set();
-  // Match {{field_name}} but not {{#if ...}} or {{/if}}
+  const required = new Set();
+  const optional = new Set();
+
+  // Strip out conditional blocks and track fields inside them as optional
+  const conditionalRegex = /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g;
+  let conditionalMatch;
+  let strippedContent = templateContent;
+
+  while ((conditionalMatch = conditionalRegex.exec(templateContent)) !== null) {
+    const conditionField = conditionalMatch[1];
+    const blockContent = conditionalMatch[2];
+    optional.add(conditionField);
+
+    // Fields inside the conditional block are also optional
+    const innerRegex = /\{\{(?!#if|\/if)(\w+)\}\}/g;
+    let innerMatch;
+    while ((innerMatch = innerRegex.exec(blockContent)) !== null) {
+      optional.add(innerMatch[1]);
+    }
+
+    // Remove this block from the content for required field scanning
+    strippedContent = strippedContent.replace(conditionalMatch[0], "");
+  }
+
+  // Remaining fields (outside conditionals) are required
   const regex = /\{\{(?!#if|\/if)(\w+)\}\}/g;
   let match;
-  while ((match = regex.exec(templateContent)) !== null) {
-    fields.add(match[1]);
+  while ((match = regex.exec(strippedContent)) !== null) {
+    required.add(match[1]);
   }
-  return Array.from(fields);
+
+  // Remove any that ended up in both (required wins)
+  for (const f of required) {
+    optional.delete(f);
+  }
+
+  return { required: Array.from(required), optional: Array.from(optional) };
+}
+
+// Backward-compat wrapper: returns flat array of required fields only
+function getRequiredFieldsFlat(templateContent) {
+  return getRequiredFields(templateContent).required;
 }
 
 // --- Compose Multi-Section Document ---

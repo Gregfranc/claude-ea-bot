@@ -172,8 +172,8 @@ async function initDraft(dealName, docType, state) {
     return { templateFound: false, gathered: {}, missing: [], note: `No template for ${docType}/${state}. Will use AI drafting.` };
   }
 
-  // Get required fields from template
-  const requiredFields = templateEngine.getRequiredFields(template.content);
+  // Get required and optional fields from template
+  const { required: requiredFields, optional: optionalFields } = templateEngine.getRequiredFields(template.content);
 
   // Look up deal in pipeline
   try {
@@ -322,16 +322,62 @@ async function initDraft(dealName, docType, state) {
     gathered.closing_days = gathered.closing_days || "30";
   }
 
-  // Determine missing fields
+  // Determine missing fields (required only)
   const missing = requiredFields.filter((f) => !gathered[f]);
+  // Track which optional fields are available vs not
+  const missingOptional = optionalFields.filter((f) => !gathered[f]);
+
+  // For extensions: build a human-readable summary for the bot
+  let summary = null;
+  if (docType === "extension") {
+    const found = [];
+    const needFromGreg = [];
+
+    // Describe what we found
+    if (gathered.seller_name) found.push(`Seller: ${gathered.seller_name}`);
+    if (gathered.property_address) {
+      let addr = gathered.property_address;
+      if (gathered.property_city) addr += `, ${gathered.property_city}`;
+      if (gathered.property_state) addr += `, ${gathered.property_state}`;
+      found.push(`Property: ${addr}`);
+    }
+    if (gathered.parcel_number) found.push(`Parcel: ${gathered.parcel_number}`);
+    if (gathered.original_agreement_date) found.push(`Original agreement date: ${gathered.original_agreement_date}`);
+    if (gathered.old_closing_date) found.push(`Current closing date: ${gathered.old_closing_date}`);
+    if (gathered.old_dd_date) found.push(`Current DD date: ${gathered.old_dd_date}`);
+    if (gathered.original_purchase_price) found.push(`Purchase price: ${gathered.original_purchase_price}`);
+    if (gathered._contract_source) found.push(`Source: ${gathered._contract_source.name} (Drive)`);
+
+    // What we still need — only the essentials
+    if (!gathered.seller_name) needFromGreg.push("seller name and mailing address");
+    if (!gathered.property_address) needFromGreg.push("property address");
+    if (!gathered.parcel_number) needFromGreg.push("parcel number");
+    if (!gathered.original_agreement_date) needFromGreg.push("original agreement date");
+
+    // Extension-specific questions (always ask these)
+    needFromGreg.push("new closing date (what date to extend to)");
+    needFromGreg.push("is the due diligence period also being extended? If so, to what date?");
+    needFromGreg.push("any additional earnest money for the extension?");
+    needFromGreg.push("any price change or other term modifications?");
+    needFromGreg.push("any additional sellers who need to sign besides the primary?");
+
+    summary = {
+      found: found.length > 0 ? found : ["No contract data found in Drive or knowledge base"],
+      needFromGreg,
+      instruction: "Present what was found conversationally. Only ask what's listed in needFromGreg. Do NOT list template fields. Be brief and natural.",
+    };
+  }
 
   return {
     templateFound: true,
     templatePath: template.path,
     gathered,
     missing,
+    missingOptional,
     requiredFields,
+    optionalFields,
     sources,
+    summary,
     state: state || (gathered.state_abbrev ? gathered.state_abbrev.toLowerCase() : null),
   };
 }
