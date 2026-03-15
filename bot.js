@@ -954,6 +954,13 @@ async function runAutoTriage() {
       console.error("[Learning] Error (non-fatal):", err.message);
     }
 
+    // Check email tasks BEFORE triage (runs regardless of new emails)
+    try {
+      await processEmailTasks();
+    } catch (err) {
+      console.error("[Email Tasks] Error:", err.message);
+    }
+
     console.log("[Auto-Triage] Running scheduled inbox triage...");
     const results = await gmail.triageInbox(2);
 
@@ -1055,12 +1062,6 @@ async function runAutoTriage() {
     console.error("[Meeting Notes] Approval processing error:", err.message);
   }
 
-  // --- Post-Triage: Process email tasks (greg+task@ or EA/Task label) ---
-  try {
-    await processEmailTasks();
-  } catch (err) {
-    console.error("[Email Tasks] Error in triage cycle:", err.message);
-  }
 }
 
 // --- Email Task Processing ---
