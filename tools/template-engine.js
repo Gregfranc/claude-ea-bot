@@ -216,6 +216,20 @@ function buildStandardFields(raw) {
     fields.earnest_money_words = numberToWords(emNum);
   }
 
+  // Additional earnest money formatting (extension agreements)
+  if (fields.additional_earnest_money) {
+    const aemNum = parseFloat(String(fields.additional_earnest_money).replace(/[$,]/g, ""));
+    fields.additional_earnest_money = formatCurrency(aemNum);
+    fields.additional_earnest_money_words = numberToWords(aemNum);
+  }
+
+  // New purchase price formatting (extension agreements with price changes)
+  if (fields.new_purchase_price) {
+    const nppNum = parseFloat(String(fields.new_purchase_price).replace(/[$,]/g, ""));
+    fields.new_purchase_price = formatCurrency(nppNum);
+    fields.new_purchase_price_words = numberToWords(nppNum);
+  }
+
   // Defaults
   fields.due_diligence_days = fields.due_diligence_days || "30";
   fields.closing_days = fields.closing_days || "30";

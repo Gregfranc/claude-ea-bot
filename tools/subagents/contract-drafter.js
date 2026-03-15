@@ -133,9 +133,15 @@ async function initDraft(dealName, docType, state) {
   gathered.buyer_name = "GF Development LLC";
   gathered.today_date = templateEngine.formatDate(new Date());
   gathered.effective_date = gathered.today_date;
-  gathered.acceptance_days = gathered.acceptance_days || "2";
-  gathered.feasibility_days = gathered.feasibility_days || "30";
-  gathered.closing_days = gathered.closing_days || "30";
+
+  // Doc-type-specific defaults
+  if (docType === "extension") {
+    gathered.earnest_money_deposit_days = gathered.earnest_money_deposit_days || "5";
+  } else {
+    gathered.acceptance_days = gathered.acceptance_days || "2";
+    gathered.feasibility_days = gathered.feasibility_days || "30";
+    gathered.closing_days = gathered.closing_days || "30";
+  }
 
   // Determine missing fields
   const missing = requiredFields.filter((f) => !gathered[f]);
@@ -156,7 +162,13 @@ async function initDraft(dealName, docType, state) {
 // =============================================================================
 
 async function generateFromTemplate(docType, state, rawFields, options = {}) {
-  const { includeCoverLetter = true, includeAboutMe = true, customTerms } = options;
+  // Extension agreements don't include cover letter or about-me
+  const isExtension = docType === "extension";
+  const {
+    includeCoverLetter = !isExtension,
+    includeAboutMe = !isExtension,
+    customTerms,
+  } = options;
 
   // Build computed fields (price words, date formatting, etc.)
   const fields = templateEngine.buildStandardFields(rawFields);
@@ -174,8 +186,8 @@ async function generateFromTemplate(docType, state, rawFields, options = {}) {
 
   let contractBody = templateEngine.mergeFields(template.content, fields);
 
-  // If custom terms provided, append as special conditions
-  if (customTerms) {
+  // If custom terms provided, append as special conditions (offer-type docs only)
+  if (customTerms && !isExtension) {
     contractBody += `\n\n15. Special Conditions\n\n  - ${customTerms}\n`;
   }
 
@@ -209,7 +221,8 @@ async function generateFromTemplate(docType, state, rawFields, options = {}) {
 
   // Generate the .docx
   const dealName = rawFields.deal_name || rawFields.seller_last_name || "Contract";
-  const fileName = `${dealName} - Purchase Offer`;
+  const docTypeLabel = isExtension ? "Extension Agreement" : "Purchase Offer";
+  const fileName = `${dealName} - ${docTypeLabel}`;
 
   const result = await contracts.generateMultiSectionDoc(sections, fileName, docType, dealName);
 
