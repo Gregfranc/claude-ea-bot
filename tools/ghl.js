@@ -24,28 +24,50 @@ async function ghlFetch(endpoint, options = {}) {
   if (!headers) throw new Error("GHL not configured. Set GHL_API_KEY in .env.");
 
   const url = `${BASE_URL}${endpoint}`;
+  console.log(`[GHL] ${options.method || "GET"} ${url}`);
+  if (options.body) console.log(`[GHL] Body: ${JSON.stringify(options.body).substring(0, 300)}`);
+
   const res = await fetch(url, {
     method: options.method || "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
+  const text = await res.text();
+  console.log(`[GHL] Response ${res.status}: ${text.substring(0, 500)}`);
+
   if (!res.ok) {
-    const text = await res.text();
     throw new Error(`GHL API ${res.status}: ${text.substring(0, 200)}`);
   }
 
-  return await res.json();
+  return JSON.parse(text);
 }
 
 // --- Contacts ---
 
 async function searchContacts(query, limit = 10) {
   const locationId = process.env.GHL_LOCATION_ID;
-  const data = await ghlFetch(
-    `/contacts/?locationId=${locationId}&query=${encodeURIComponent(query)}&limit=${limit}`
-  );
-  return (data.contacts || []).map(formatContact);
+
+  // POST /contacts/search with filters (current GHL v2 API)
+  const data = await ghlFetch(`/contacts/search`, {
+    method: "POST",
+    body: {
+      locationId,
+      page: 1,
+      pageLimit: limit,
+      filters: [
+        {
+          field: "name",
+          operator: "contains",
+          value: query,
+        },
+      ],
+    },
+  });
+
+  // API may return contacts at data.contacts or data.data
+  const contacts = data.contacts || data.data || [];
+  return contacts.map(formatContact);
 }
 
 async function getContact(contactId) {
