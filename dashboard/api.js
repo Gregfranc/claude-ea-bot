@@ -68,10 +68,26 @@ router.post("/auth/request", async (req, res) => {
   res.json({ success: true, message: "Magic link sent to your Slack DM" });
 });
 
-// Verify magic link and set session cookie
+// Verify magic link — GET shows confirmation page (Slack unfurls links,
+// consuming the token before the user clicks). POST actually logs in.
 router.get("/auth/verify", (req, res) => {
   const { token } = req.query;
-  console.log(`[Dashboard Auth] Verify attempt: ${(token || "").substring(0, 8)}... Pending tokens: ${Object.keys(pendingTokens).length}, keys: [${Object.keys(pendingTokens).map(k => k.substring(0, 8)).join(", ")}]`);
+  if (!token || !pendingTokens[token]) {
+    return res.status(400).send("Invalid or expired link. Request a new one from the dashboard.");
+  }
+  // Show confirmation page — don't consume token on GET
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mission Control Login</title>
+<style>body{background:#0f172a;color:#e2e8f0;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{text-align:center;padding:2rem}button{background:#3b82f6;color:white;border:none;padding:12px 32px;border-radius:8px;font-size:16px;cursor:pointer}
+button:hover{background:#2563eb}</style></head>
+<body><div class="card"><h2>Mission Control</h2><p>Click to log in:</p>
+<form method="POST" action="/api/auth/verify"><input type="hidden" name="token" value="${token}">
+<button type="submit">Log In</button></form></div></body></html>`);
+});
+
+router.post("/auth/verify", express.urlencoded({ extended: false }), (req, res) => {
+  const token = req.body?.token;
   if (!token || !pendingTokens[token]) {
     return res.status(400).send("Invalid or expired link. Request a new one from the dashboard.");
   }
@@ -79,12 +95,10 @@ router.get("/auth/verify", (req, res) => {
   const data = pendingTokens[token];
   delete pendingTokens[token];
 
-  // Check expiry (15 minutes)
   if (Date.now() - data.createdAt > 15 * 60 * 1000) {
     return res.status(400).send("Link expired. Request a new one from the dashboard.");
   }
 
-  // Issue JWT session cookie
   const sessionToken = jwt.sign({ userId: data.slackUserId }, JWT_SECRET(), {
     expiresIn: `${SESSION_DAYS}d`,
   });
@@ -96,7 +110,6 @@ router.get("/auth/verify", (req, res) => {
     maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
   });
 
-  // Redirect to dashboard
   const dashboardUrl = process.env.DASHBOARD_URL || "";
   res.redirect(dashboardUrl || "/");
 });
