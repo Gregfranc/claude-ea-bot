@@ -153,7 +153,7 @@ function MessageCard({ item, isSelected, onClick }) {
 // ============================================================
 // MESSAGE FEED
 // ============================================================
-function MessageFeed({ items, selectedId, onSelect, loading }) {
+function MessageFeed({ items, selectedId, onSelect, loading, emptyMessage, error }) {
   if (loading) {
     return html`
       <div class="p-4 space-y-3">
@@ -171,10 +171,19 @@ function MessageFeed({ items, selectedId, onSelect, loading }) {
     `;
   }
 
+  if (error) {
+    return html`
+      <div class="flex flex-col items-center justify-center h-full text-gray-500 text-sm gap-2">
+        <span>${error}</span>
+        <button onclick=${() => window.location.reload()} class="text-blue-400 hover:text-blue-300 text-xs">Retry</button>
+      </div>
+    `;
+  }
+
   if (!items || items.length === 0) {
     return html`
       <div class="flex items-center justify-center h-full text-gray-500 text-sm">
-        No messages
+        ${emptyMessage || 'No messages'}
       </div>
     `;
   }
@@ -391,6 +400,7 @@ function App() {
   const [mobileView, setMobileView] = useState('feed'); // feed | detail
   const [mobileTab, setMobileTab] = useState('feed');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
   // Reactive resize listener
@@ -401,6 +411,9 @@ function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Single source of truth for starred filter: desktop sidebar OR mobile tab
+  const effectiveStarred = starred || (isMobile && mobileTab === 'starred');
 
   window.__setAuth = setAuth;
 
@@ -413,30 +426,37 @@ function App() {
 
   // Fetch feed
   const fetchFeed = useCallback(async () => {
+    setFetchError(null);
     const params = new URLSearchParams();
     if (channel !== 'all') params.set('channel', channel);
-    if (starred || mobileTab === 'starred') params.set('starred', 'true');
+    if (effectiveStarred) params.set('starred', 'true');
     if (search) params.set('search', search);
     params.set('limit', '100');
 
-    const data = await api.get(`/feed?${params}`);
-    if (data) {
-      let sorted = data.items || [];
-      if (sort === 'starred') sorted = [...sorted].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
-      if (sort === 'unread') sorted = [...sorted].sort((a, b) => (a.read ? 1 : 0) - (b.read ? 1 : 0));
-      setItems(sorted);
+    try {
+      const data = await api.get(`/feed?${params}`);
+      if (data) {
+        let sorted = data.items || [];
+        if (sort === 'starred') sorted = [...sorted].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+        if (sort === 'unread') sorted = [...sorted].sort((a, b) => (a.read ? 1 : 0) - (b.read ? 1 : 0));
+        setItems(sorted);
+        setLoading(false);
+      }
+    } catch (err) {
+      setFetchError('Failed to load feed');
       setLoading(false);
     }
-  }, [channel, starred, search, sort, mobileTab]);
+  }, [channel, effectiveStarred, search, sort]);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
-    const data = await api.get('/stats');
-    if (data) {
-      setStats(data);
-      // Update page title with unread count
-      document.title = data.unread > 0 ? `(${data.unread}) Mission Control` : 'Mission Control';
-    }
+    try {
+      const data = await api.get('/stats');
+      if (data) {
+        setStats(data);
+        document.title = data.unread > 0 ? `(${data.unread}) Mission Control` : 'Mission Control';
+      }
+    } catch {}
   }, []);
 
   // Auto-refresh
@@ -506,6 +526,11 @@ function App() {
   if (auth === null) return html`<div class="flex items-center justify-center h-screen text-gray-500">Loading...</div>`;
   if (!auth) return html`<${LoginScreen} />`;
 
+  // Context-aware empty message
+  const emptyMsg = effectiveStarred ? 'No starred messages' :
+    channel !== 'all' ? `No ${CHANNELS[channel]?.label || channel} messages` :
+    search ? `No results for "${search}"` : 'No messages yet';
+
   // --- Mobile layout ---
   if (isMobile) {
     return html`
@@ -526,11 +551,18 @@ function App() {
                 selectedId=${selectedItem?.id}
                 onSelect=${selectItem}
                 loading=${loading}
+                emptyMessage=${emptyMsg}
+                error=${fetchError}
               />
             </div>
           </div>
         `}
-        <${MobileNav} tab=${mobileTab} setTab=${(t) => { setMobileTab(t); setMobileView('feed'); if (t === 'starred') setStarred(true); else setStarred(false); }} stats=${stats} />
+        <${MobileNav} tab=${mobileTab} setTab=${(t) => {
+          setMobileTab(t);
+          setMobileView('feed');
+          // Sync starred state: mobile "Starred" tab = starred filter on
+          setStarred(t === 'starred');
+        }} stats=${stats} />
       </div>
     `;
   }
@@ -554,6 +586,8 @@ function App() {
             selectedId=${selectedItem?.id}
             onSelect=${selectItem}
             loading=${loading}
+            emptyMessage=${emptyMsg}
+            error=${fetchError}
           />
         </div>
       </div>
