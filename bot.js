@@ -210,17 +210,15 @@ Knowledge base: ALWAYS try search_knowledge_base FIRST when Greg asks about docu
 Web search: You have web_search available for real-time research, market data, company lookups, news, and anything not in Greg's files. Use it when the question needs current information from the internet. Multiple searches per response are fine.
 
 SCHEDULED SYSTEMS (running 24/7 on VPS):
-1. Email Triage: every 15 min (5am-11pm CST), every 60 min overnight. Scans inbox, classifies (star/fyi/noise), applies deal labels, accounting labels. DMs Greg on starred or actionable emails. Learns from Greg's corrections.
-2. Email Tasks: runs every triage cycle. Checks for emails sent to greg+task@gfdevllc.com or labeled EA/Task. Processes the task, DMs results, marks done.
-3. Triage Analysis Reports: daily at noon and 7pm CST. Summary of what was triaged (starred, fyi, noise counts, samples).
-4. Deal Digest: daily at 6:15am CST. Summarizes deal activity from emails and calendar.
-5. Meeting Notes: daily reminder at 9:05am CST if pending notes need review in the tracker sheet.
-6. Subscription Scan: daily at 7:00am CST. Checks upcoming subscription renewals and DMs reminders.
-7. Drive Watcher: every 30 min (6am-10pm CST). Detects new/changed files in Google Drive deal folders.
-8. RAG Knowledge Base Sync: every 1 hour (6am-10pm CST). Re-indexes Drive documents into the searchable knowledge base.
-9. Quo Phone Polling: every 15 min daytime, 60 min overnight. Pulls calls and SMS from Quo phone system into meeting notes tracker.
-10. Recovery Doc Backup: daily at 6:05am CST. Backs up the recovery document.
-When Greg asks about scheduled systems, automations, or what runs in the background, list these with their schedules. These are ALWAYS running, not on-demand.
+Daily Briefings (7am, 12pm, 5pm CST): Consolidated report with inbox triage stats (starred, fyi, noise, newsletters + details), deal activity digest, upcoming subscription renewals, and pending meeting notes. All three are full reports. Greg is actively monitoring these to refine accuracy before trimming down.
+Background systems (no DMs unless notable):
+- Email Triage: every 15 min (5am-11pm CST), 60 min overnight. Classifies inbox, applies labels, DMs on starred/actionable.
+- Email Tasks: every triage cycle. Processes emails to greg+task@gfdevllc.com.
+- Drive Watcher: every 30 min (6am-10pm CST). Detects new/changed files in deal folders.
+- RAG Knowledge Base Sync: every 1 hour (6am-10pm CST). Re-indexes Drive documents.
+- Quo Phone Polling: every 15 min daytime, 60 min overnight. Captures calls and SMS.
+- Recovery Doc Backup: daily at 6:05am CST.
+When Greg asks about scheduled systems, list these with schedules. All ALWAYS running, not on-demand.
 
 Team: Rachel Rife (PM), Brian Chaplin (Acquisitions, La Pine OR deals), Marwan Mousa (Leads).
 Priorities: 1) Cash flow via La Pine deals 2) WASem Lot 3 close 3) Traditions North + Brio Vista long-term.
@@ -1228,50 +1226,59 @@ async function processEmailTasks() {
   }
 }
 
-// --- Daily Triage Analysis ---
-// DMs Greg a quality report at noon and 7pm CST
-const ANALYSIS_HOURS = [12, 19]; // noon and 7pm CST
-let analysisTimer = null;
+// --- Consolidated Daily Briefings ---
+// Three daily briefings at 7am, 12pm, 5pm CST combining:
+// inbox triage stats, deal digest, subscription scan, meeting notes pending, noise spot-check
+const BRIEFING_HOURS = [7, 12, 17]; // 7am, noon, 5pm CST
+const BRIEFING_LABELS = { 7: "Morning", 12: "Midday", 17: "End of Day" };
+let briefingTimer = null;
 
-function getNextAnalysisTime() {
+function getNextBriefingTime() {
   const now = new Date();
   const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
   const currentHour = cst.getHours();
   const currentMin = cst.getMinutes();
 
-  // Find next analysis hour
-  let targetHour = ANALYSIS_HOURS.find((h) => h > currentHour || (h === currentHour && currentMin < 3));
+  let targetHour = BRIEFING_HOURS.find((h) => h > currentHour || (h === currentHour && currentMin < 3));
   let daysToAdd = 0;
   if (!targetHour) {
-    targetHour = ANALYSIS_HOURS[0]; // wrap to tomorrow's first slot
+    targetHour = BRIEFING_HOURS[0];
     daysToAdd = 1;
   }
 
-  // Build target time in CST
   const target = new Date(cst);
   target.setDate(target.getDate() + daysToAdd);
-  target.setHours(targetHour, 3, 0, 0); // :03 past the hour to avoid exact marks
+  target.setHours(targetHour, 0, 0, 0);
   const msUntil = target.getTime() - cst.getTime();
   return { msUntil, targetHour };
 }
 
-function scheduleNextAnalysis() {
-  if (analysisTimer) clearTimeout(analysisTimer);
-  const { msUntil, targetHour } = getNextAnalysisTime();
-  analysisTimer = setTimeout(async () => {
-    await runTriageAnalysis();
-    scheduleNextAnalysis();
+function scheduleNextBriefing() {
+  if (briefingTimer) clearTimeout(briefingTimer);
+  const { msUntil, targetHour } = getNextBriefingTime();
+  briefingTimer = setTimeout(async () => {
+    await runDailyBriefing(targetHour);
+    scheduleNextBriefing();
   }, msUntil);
   const hoursUntil = (msUntil / 3600000).toFixed(1);
-  console.log(`[Triage Analysis] Next report at ${targetHour}:03 CST (in ${hoursUntil} hours).`);
+  console.log(`[Briefing] Next briefing at ${targetHour}:00 CST (${BRIEFING_LABELS[targetHour]}, in ${hoursUntil} hours).`);
 }
 
-async function runTriageAnalysis() {
-  try {
-    console.log("[Triage Analysis] Generating daily triage quality report...");
-    const gmailClient = gmail.getGmail();
+async function runDailyBriefing(hour) {
+  const label = BRIEFING_LABELS[hour] || "Briefing";
+  const dateStr = new Date().toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric",
+    timeZone: "America/Chicago",
+  });
 
-    // Get today's triaged, starred, and noise emails
+  console.log(`[Briefing] Running ${label} briefing...`);
+
+  let sections = [];
+  sections.push(`*${label} Briefing* | ${dateStr}`);
+
+  // --- INBOX ---
+  try {
+    const gmailClient = gmail.getGmail();
     const today = new Date();
     const todayStr = `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}`;
 
@@ -1286,64 +1293,134 @@ async function runTriageAnalysis() {
     const starredCount = starredRes.data.messages?.length || 0;
     const noiseCount = noiseRes.data.messages?.length || 0;
     const newsletterCount = newsletterRes.data.messages?.length || 0;
-    const fyi = triagedCount - starredCount - noiseCount - newsletterCount;
+    const fyi = Math.max(0, triagedCount - starredCount - noiseCount - newsletterCount);
 
-    // Get details on starred emails
-    let starredDetails = [];
+    let inbox = `\n*INBOX*\nTriaged: ${triagedCount} | Starred: ${starredCount} | FYI: ${fyi} | Newsletters: ${newsletterCount} | Noise: ${noiseCount}`;
+
+    // Starred details
     if (starredRes.data.messages) {
-      for (const msg of starredRes.data.messages.slice(0, 15)) {
+      let starredDetails = [];
+      for (const msg of starredRes.data.messages.slice(0, 10)) {
         try {
           const full = await gmailClient.users.messages.get({ userId: "me", id: msg.id, format: "metadata", metadataHeaders: ["From", "Subject"] });
           const headers = full.data.payload.headers;
           const from = (headers.find((h) => h.name === "From") || {}).value || "Unknown";
           const subject = (headers.find((h) => h.name === "Subject") || {}).value || "(no subject)";
           const fromName = from.replace(/<.*>/, "").trim();
-          starredDetails.push(`• ${fromName}: ${subject}`);
+          starredDetails.push(`  • ${fromName}: ${subject}`);
         } catch {}
       }
+      if (starredDetails.length > 0) {
+        inbox += `\n${starredDetails.join("\n")}`;
+      }
+    }
+    if (starredCount === 0) {
+      inbox += `\nNo emails starred today. If deal or team emails came in, triage may be under-starring.`;
     }
 
-    // Get details on noise to spot-check for false negatives
-    let noiseDetails = [];
-    if (noiseRes.data.messages) {
-      for (const msg of noiseRes.data.messages.slice(0, 10)) {
+    // Noise spot-check
+    if (noiseRes.data.messages && noiseRes.data.messages.length > 0) {
+      let noiseDetails = [];
+      for (const msg of noiseRes.data.messages.slice(0, 5)) {
         try {
           const full = await gmailClient.users.messages.get({ userId: "me", id: msg.id, format: "metadata", metadataHeaders: ["From", "Subject"] });
           const headers = full.data.payload.headers;
           const from = (headers.find((h) => h.name === "From") || {}).value || "Unknown";
           const subject = (headers.find((h) => h.name === "Subject") || {}).value || "(no subject)";
           const fromName = from.replace(/<.*>/, "").trim();
-          noiseDetails.push(`• ${fromName}: ${subject}`);
+          noiseDetails.push(`  • ${fromName}: ${subject}`);
         } catch {}
+      }
+      if (noiseDetails.length > 0) {
+        inbox += `\n_Noise sample (spot check):_\n${noiseDetails.join("\n")}`;
       }
     }
 
-    // Build the report
-    let report = `*Triage Analysis Report*\n`;
-    report += `Total triaged today: ${triagedCount}\n`;
-    report += `Starred: ${starredCount} | FYI: ${Math.max(0, fyi)} | Newsletters: ${newsletterCount} | Noise: ${noiseCount}\n`;
+    sections.push(inbox);
+  } catch (err) {
+    console.error("[Briefing] Inbox section error:", err.message);
+    sections.push(`\n*INBOX*\nError loading inbox stats: ${err.message}`);
+  }
 
-    if (starredDetails.length > 0) {
-      report += `\n*Starred emails:*\n${starredDetails.join("\n")}\n`;
+  // --- DEALS ---
+  try {
+    const results = await dealDigest.runDailyDigest(26);
+    let deals = `\n*DEALS*`;
+    if (results.dealsUpdated > 0) {
+      const updated = results.details
+        .filter((d) => d.status === "updated")
+        .map((d) => `  • ${d.deal} (${d.project})`)
+        .join("\n");
+      deals += `\n${results.dealsUpdated} deal${results.dealsUpdated > 1 ? "s" : ""} with new activity:\n${updated}`;
     } else {
-      report += `\n*No emails starred today.* If there were deal or team emails, the triage may be under-starring.\n`;
+      deals += `\nNo new deal activity.`;
     }
+    sections.push(deals);
+  } catch (err) {
+    console.error("[Briefing] Deals section error:", err.message);
+    sections.push(`\n*DEALS*\nError loading deal digest: ${err.message}`);
+  }
 
-    if (noiseDetails.length > 0) {
-      report += `\n*Noise sample (spot-check these):*\n${noiseDetails.join("\n")}\n`;
+  // --- SUBSCRIPTIONS ---
+  try {
+    // Run the scan to pick up any new subscriptions
+    await subscriptions.scanSubscriptions();
+    const upcoming = subscriptions.getUpcomingRenewals(7);
+    let subs = `\n*SUBSCRIPTIONS*`;
+    if (upcoming.length > 0) {
+      const lines = upcoming.map((s) => {
+        const cost = s.amount ? ` ($${s.amount}/${s.frequency || "mo"})` : "";
+        return `  • ${s.name}${cost} renews ${s.next_renewal || "soon"}`;
+      });
+      subs += `\n${upcoming.length} renewal${upcoming.length > 1 ? "s" : ""} in next 7 days:\n${lines.join("\n")}`;
+    } else {
+      subs += `\nNo renewals in next 7 days.`;
     }
+    sections.push(subs);
+  } catch (err) {
+    console.error("[Briefing] Subscriptions section error:", err.message);
+    sections.push(`\n*SUBSCRIPTIONS*\nError loading subscriptions: ${err.message}`);
+  }
 
-    report += `\nReply with any corrections (e.g. "star brian emails" or "noise cloudflare") and I'll update the triage rules.`;
+  // --- MEETING NOTES ---
+  try {
+    const trackerUrl = meetingNotes.getTrackerUrl();
+    if (trackerUrl) {
+      const config = JSON.parse(fs.readFileSync(path.join(__dirname, "data/meeting-notes-config.json"), "utf-8"));
+      if (config.spreadsheetId) {
+        const sheetData = await sheets.readSheet(config.spreadsheetId);
+        const pending = sheetData.data ? sheetData.data.filter((r) => r.Status === "Pending") : [];
+        let notes = `\n*MEETING NOTES*`;
+        if (pending.length > 0) {
+          notes += `\n${pending.length} pending review:`;
+          for (const p of pending.slice(0, 5)) {
+            notes += `\n  • ${p.Date || "?"} | ${p.Title || "Untitled"} | ${p["Suggested Project"] || "General"}`;
+          }
+          if (pending.length > 5) notes += `\n  ...and ${pending.length - 5} more`;
+          notes += `\n<${trackerUrl}|Open tracker>`;
+        } else {
+          notes += `\nAll caught up. No pending notes.`;
+        }
+        sections.push(notes);
+      }
+    }
+  } catch (err) {
+    console.error("[Briefing] Meeting notes section error:", err.message);
+    sections.push(`\n*MEETING NOTES*\nError loading meeting notes: ${err.message}`);
+  }
 
+  // --- SEND ---
+  const report = sections.join("\n") + `\n\nReply with corrections (e.g. "star brian" or "noise cloudflare").`;
+
+  try {
     const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
     await app.client.chat.postMessage({
       channel: dmChannel.channel.id,
       text: report,
     });
-
-    console.log("[Triage Analysis] Report sent to Greg.");
+    console.log(`[Briefing] ${label} briefing sent.`);
   } catch (err) {
-    console.error("[Triage Analysis] Error:", err.message);
+    console.error("[Briefing] Could not send briefing:", err.message);
   }
 }
 
@@ -1414,220 +1491,8 @@ async function runDailyBackup() {
   }
 }
 
-// --- Daily Meeting Notes Review Reminder ---
-// DMs Greg once a day at 9am CST if there are pending meeting notes to review
-const MEETING_REVIEW_HOUR = 9; // 9am CST
-let meetingReviewTimer = null;
-
-function getNextMeetingReviewTime() {
-  const now = new Date();
-  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
-  const currentHour = cst.getHours();
-  const currentMin = cst.getMinutes();
-
-  let daysToAdd = 0;
-  if (currentHour > MEETING_REVIEW_HOUR || (currentHour === MEETING_REVIEW_HOUR && currentMin >= 5)) {
-    daysToAdd = 1;
-  }
-
-  const target = new Date(cst);
-  target.setDate(target.getDate() + daysToAdd);
-  target.setHours(MEETING_REVIEW_HOUR, 5, 0, 0);
-  return target.getTime() - cst.getTime();
-}
-
-function scheduleNextMeetingReview() {
-  if (meetingReviewTimer) clearTimeout(meetingReviewTimer);
-  const msUntil = getNextMeetingReviewTime();
-  meetingReviewTimer = setTimeout(async () => {
-    await sendMeetingReviewReminder();
-    scheduleNextMeetingReview();
-  }, msUntil);
-  const hoursUntil = (msUntil / 3600000).toFixed(1);
-  console.log(`[Meeting Notes] Next review reminder at ${MEETING_REVIEW_HOUR}:05 CST (in ${hoursUntil} hours).`);
-}
-
-async function sendMeetingReviewReminder() {
-  try {
-    const trackerUrl = meetingNotes.getTrackerUrl();
-    if (!trackerUrl) {
-      console.log("[Meeting Notes] No tracker sheet yet, skipping reminder.");
-      return;
-    }
-
-    // Check if there are any pending notes
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, "data/meeting-notes-config.json"), "utf-8"));
-    if (!config.spreadsheetId) return;
-
-    const sheetData = await sheets.readSheet(config.spreadsheetId);
-    if (!sheetData.data) return;
-
-    const pending = sheetData.data.filter((r) => r.Status === "Pending");
-    if (pending.length === 0) {
-      console.log("[Meeting Notes] No pending notes, skipping reminder.");
-      return;
-    }
-
-    const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-    let msg = `You have ${pending.length} meeting note${pending.length > 1 ? "s" : ""} to review.\n`;
-    for (const p of pending.slice(0, 5)) {
-      msg += `  ${p.Date || "?"} | ${p.Title || "Untitled"} | ${p["Suggested Project"] || "General"}\n`;
-    }
-    if (pending.length > 5) msg += `  ...and ${pending.length - 5} more\n`;
-    msg += `\nReview and approve: ${trackerUrl}`;
-
-    await app.client.chat.postMessage({
-      channel: dmChannel.channel.id,
-      text: msg,
-    });
-
-    console.log(`[Meeting Notes] Sent review reminder: ${pending.length} pending.`);
-  } catch (err) {
-    console.error("[Meeting Notes] Review reminder error:", err.message);
-  }
-}
-
-// --- RAG Drive Sync Scheduler ---
-// --- Daily Deal Digest ---
-// Scans deal-labeled emails from last 26 hours, extracts key updates via Haiku,
-// appends to project README activity logs. Runs at 6:15am CST daily.
+// Deal digest module (used by consolidated briefing)
 const dealDigest = require("./tools/deal-digest");
-const DEAL_DIGEST_HOUR = 6; // 6am CST
-let dealDigestTimer = null;
-
-function getNextDealDigestTime() {
-  const now = new Date();
-  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
-  const currentHour = cst.getHours();
-  const currentMin = cst.getMinutes();
-
-  let daysToAdd = 0;
-  if (currentHour > DEAL_DIGEST_HOUR || (currentHour === DEAL_DIGEST_HOUR && currentMin >= 15)) {
-    daysToAdd = 1;
-  }
-
-  const target = new Date(cst);
-  target.setDate(target.getDate() + daysToAdd);
-  target.setHours(DEAL_DIGEST_HOUR, 15, 0, 0); // 6:15am CST
-  return target.getTime() - cst.getTime();
-}
-
-function scheduleNextDealDigest() {
-  if (dealDigestTimer) clearTimeout(dealDigestTimer);
-  const msUntil = getNextDealDigestTime();
-  dealDigestTimer = setTimeout(async () => {
-    await runDealDigest();
-    scheduleNextDealDigest();
-  }, msUntil);
-  const hoursUntil = (msUntil / 3600000).toFixed(1);
-  console.log(`[DealDigest] Next digest at ${DEAL_DIGEST_HOUR}:15 CST (in ${hoursUntil} hours).`);
-}
-
-async function runDealDigest() {
-  try {
-    console.log("[DealDigest] Running daily deal digest...");
-    const results = await dealDigest.runDailyDigest(26);
-
-    // DM Greg a summary if any deals were updated
-    if (results.dealsUpdated > 0) {
-      const updatedDeals = results.details
-        .filter((d) => d.status === "updated")
-        .map((d) => `  ${d.deal} (${d.project})`)
-        .join("\n");
-
-      try {
-        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-        await app.client.chat.postMessage({
-          channel: dmChannel.channel.id,
-          text: `*Daily Deal Digest*\n${results.dealsUpdated} deal${results.dealsUpdated > 1 ? "s" : ""} updated with new activity:\n${updatedDeals}\n\n${results.dealsProcessed} total deals scanned, ${results.dealsSkipped} had no new activity.`,
-        });
-      } catch (e) {
-        console.error("[DealDigest] Could not notify Greg:", e.message);
-      }
-    } else {
-      console.log("[DealDigest] No deals had notable updates today.");
-    }
-
-    if (results.errors.length > 0) {
-      console.error("[DealDigest] Errors:", JSON.stringify(results.errors));
-    }
-  } catch (err) {
-    console.error("[DealDigest] Fatal error:", err.message);
-  }
-}
-
-// --- Subscription Scanner ---
-// Scans Gmail daily at 7am CST for subscription/renewal emails, updates tracker, sends alerts
-const SUBSCRIPTION_SCAN_HOUR = 7;
-let subscriptionTimer = null;
-
-function getNextSubscriptionScanTime() {
-  const now = new Date();
-  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
-  const currentHour = cst.getHours();
-
-  // If we're at or past the scan hour, schedule for tomorrow
-  let daysToAdd = currentHour >= SUBSCRIPTION_SCAN_HOUR ? 1 : 0;
-
-  const target = new Date(cst);
-  target.setDate(target.getDate() + daysToAdd);
-  target.setHours(SUBSCRIPTION_SCAN_HOUR, 0, 0, 0);
-  return target.getTime() - cst.getTime();
-}
-
-function scheduleNextSubscriptionScan() {
-  if (subscriptionTimer) clearTimeout(subscriptionTimer);
-  const msUntil = getNextSubscriptionScanTime();
-  subscriptionTimer = setTimeout(async () => {
-    await runSubscriptionScan();
-    scheduleNextSubscriptionScan();
-  }, msUntil);
-  const hoursUntil = (msUntil / 3600000).toFixed(1);
-  console.log(`[Subscriptions] Next scan at ${SUBSCRIPTION_SCAN_HOUR}:00 CST (in ${hoursUntil} hours).`);
-}
-
-async function runSubscriptionScan() {
-  try {
-    console.log("[Subscriptions] Running daily subscription scan...");
-    const results = await subscriptions.scanSubscriptions();
-
-    console.log(
-      `[Subscriptions] Scan complete: ${results.new} new, ${results.updated} updated, ${results.reminders_created} reminders created, ${results.errors} errors.`
-    );
-
-    // Check for upcoming renewals (next 7 days) and alert Greg
-    const upcoming = subscriptions.getUpcomingRenewals(7);
-    if (upcoming.length > 0) {
-      const alert = subscriptions.formatRenewalAlert(upcoming);
-      if (alert) {
-        try {
-          const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-          await app.client.chat.postMessage({
-            channel: dmChannel.channel.id,
-            text: alert,
-          });
-        } catch (e) {
-          console.error("[Subscriptions] Could not notify Greg:", e.message);
-        }
-      }
-    }
-
-    // Also alert for any new subscriptions detected
-    if (results.new > 0) {
-      try {
-        const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
-        await app.client.chat.postMessage({
-          channel: dmChannel.channel.id,
-          text: `*Subscription tracker:* Detected ${results.new} new subscription(s) from email. Say "list subscriptions" to see all tracked subscriptions.`,
-        });
-      } catch (e) {
-        console.error("[Subscriptions] Could not notify Greg:", e.message);
-      }
-    }
-  } catch (err) {
-    console.error("[Subscriptions] Scan error:", err.message);
-  }
-}
 
 // --- Drive Folder Watcher ---
 // Polls deal status folders every 30 min during daytime, detects moves, cascades updates.
@@ -1789,20 +1654,12 @@ async function runQuoPoll() {
   console.log("[Auto-Triage] Adaptive schedule active (15 min 5am-11pm CST, 60 min overnight).");
   console.log("[Email Tasks] Active. Forward emails to greg+task@gfdevllc.com or label EA/Task.");
 
-  scheduleNextAnalysis();
-  console.log("[Triage Analysis] Daily reports scheduled at noon and 7pm CST.");
+  // Consolidated briefings: 7am, noon, 5pm CST (inbox + deals + subscriptions + meeting notes)
+  scheduleNextBriefing();
+  console.log("[Briefing] Daily briefings scheduled at 7am, 12pm, 5pm CST.");
 
   scheduleNextBackup();
   console.log("[Backup] Daily recovery doc backup scheduled at 6:05am CST.");
-
-  scheduleNextMeetingReview();
-  console.log("[Meeting Notes] Daily review reminder scheduled at 9:05am CST.");
-
-  scheduleNextDealDigest();
-  console.log("[DealDigest] Daily deal digest scheduled at 6:15am CST.");
-
-  scheduleNextSubscriptionScan();
-  console.log("[Subscriptions] Daily subscription scan scheduled at 7:00am CST.");
 
   // Run initial Drive watcher scan on startup (after 15s to let other things init)
   setTimeout(async () => {
