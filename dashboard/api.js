@@ -41,6 +41,7 @@ function authRequired(req, res, next) {
 router.post("/auth/request", async (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   pendingTokens[token] = { slackUserId: OWNER_USER_ID, createdAt: Date.now() };
+  console.log(`[Dashboard Auth] Token created: ${token.substring(0, 8)}... (${Object.keys(pendingTokens).length} pending)`);
 
   // Clean up old tokens (older than 15 minutes)
   const now = Date.now();
@@ -70,6 +71,7 @@ router.post("/auth/request", async (req, res) => {
 // Verify magic link and set session cookie
 router.get("/auth/verify", (req, res) => {
   const { token } = req.query;
+  console.log(`[Dashboard Auth] Verify attempt: ${(token || "").substring(0, 8)}... Pending tokens: ${Object.keys(pendingTokens).length}, keys: [${Object.keys(pendingTokens).map(k => k.substring(0, 8)).join(", ")}]`);
   if (!token || !pendingTokens[token]) {
     return res.status(400).send("Invalid or expired link. Request a new one from the dashboard.");
   }
