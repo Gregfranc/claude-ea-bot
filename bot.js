@@ -1758,7 +1758,7 @@ async function runMCBriefing() {
   console.log("Public users: chat only (no tool access)");
 
   // --- Mission Control: Initialize ---
-  slackConnector.init(app);
+  slackConnector.init(app, OWNER_USER_ID);
   mc.init();
   startDashboardServer();
   console.log("[MissionControl] Initialized with all channel connectors.");

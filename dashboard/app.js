@@ -391,6 +391,16 @@ function App() {
   const [mobileView, setMobileView] = useState('feed'); // feed | detail
   const [mobileTab, setMobileTab] = useState('feed');
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+
+  // Reactive resize listener
+  useEffect(() => {
+    function onResize() {
+      setIsMobile(window.innerWidth < 768);
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   window.__setAuth = setAuth;
 
@@ -497,8 +507,6 @@ function App() {
   if (!auth) return html`<${LoginScreen} />`;
 
   // --- Mobile layout ---
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-
   if (isMobile) {
     return html`
       <div class="flex flex-col h-screen">

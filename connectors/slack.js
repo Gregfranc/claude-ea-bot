@@ -5,10 +5,12 @@ const { ChannelConnector, createFeedItem } = require("./base");
 
 let slackClient = null;
 let botUserId = null;
+let ownerUserId = null;
 
 // Must be called once at startup with the Slack app instance
-function init(app) {
+function init(app, ownerId) {
   slackClient = app.client;
+  ownerUserId = ownerId || null;
   // Get bot's own user ID so we can exclude its messages
   slackClient.auth.test().then((res) => {
     botUserId = res.user_id;
@@ -44,8 +46,9 @@ class SlackConnector extends ChannelConnector {
           });
 
           for (const msg of history.messages || []) {
-            // Skip bot's own messages
+            // Skip bot's own messages and Greg's outgoing messages
             if (msg.user === botUserId) continue;
+            if (msg.user === ownerUserId) continue;
             if (msg.subtype === "bot_message") continue;
 
             const userName = await resolveUser(msg.user);
@@ -185,6 +188,7 @@ class SlackConnector extends ChannelConnector {
   async handleEvent(event) {
     if (!event || !event.text) return null;
     if (event.user === botUserId) return null;
+    if (event.user === ownerUserId) return null;
     if (event.subtype === "bot_message") return null;
 
     const userName = await resolveUser(event.user);
