@@ -56,6 +56,109 @@ const GHL_FIELD_MAP = {
 };
 
 // =============================================================================
+// HELPER: Extract contract fields from text (used by initDraft for extensions)
+// =============================================================================
+
+function extractContractFields(text, gathered) {
+  if (!text) return;
+
+  // Seller name
+  if (!gathered.seller_name) {
+    const sellerMatch = text.match(/(?:SELLER|Seller)[:\s]+([^\n]+?)(?:\n|$)/);
+    if (sellerMatch) {
+      let name = sellerMatch[1].trim();
+      // Clean up common artifacts
+      name = name.replace(/^[:\s]+/, "").replace(/\s{2,}/g, " ");
+      if (name.length > 2 && name.length < 100) gathered.seller_name = name;
+    }
+  }
+
+  // Seller mailing address
+  if (!gathered.seller_mailing_address && gathered.seller_name) {
+    // Look for address lines after the seller name
+    const sellerBlock = text.match(/(?:SELLER|Seller)[:\s]+[^\n]+\n([^\n]+)\n([^\n]+)/i);
+    if (sellerBlock) {
+      const line1 = sellerBlock[1].trim();
+      const line2 = sellerBlock[2].trim();
+      // Line1 should look like a street address
+      if (/\d+\s+\w/.test(line1)) {
+        gathered.seller_mailing_address = line1;
+        // Line2 should look like city, state zip
+        const cityStateZip = line2.match(/^(.+?),\s*([A-Z]{2})\s+(\d{5})/);
+        if (cityStateZip) {
+          gathered.seller_mailing_city = cityStateZip[1].trim();
+          gathered.seller_mailing_state = cityStateZip[2];
+          gathered.seller_mailing_zip = cityStateZip[3];
+        }
+      }
+    }
+  }
+
+  // Property address
+  if (!gathered.property_address) {
+    const addrMatch = text.match(/(?:Property\s*(?:Address)?|property\s*located\s*at|Located\s*at)[:\s]+([^\n,]+)/i);
+    if (addrMatch) gathered.property_address = addrMatch[1].trim();
+  }
+
+  // Property city, state, zip (from property address line or nearby)
+  if (!gathered.property_city) {
+    const propLocMatch = text.match(/(?:Property\s*(?:Address)?|property\s*located\s*at|Located\s*at)[:\s]+[^\n]*?,\s*([^,\n]+),\s*([A-Z]{2})\s+(\d{5})/i);
+    if (propLocMatch) {
+      gathered.property_city = propLocMatch[1].trim();
+      gathered.property_state = propLocMatch[2].trim();
+      gathered.property_zip = propLocMatch[3].trim();
+    }
+  }
+
+  // Parcel number
+  if (!gathered.parcel_number) {
+    const parcelMatch = text.match(/(?:Parcel\s*(?:Number)?|APN|Tax\s*(?:Lot|ID|Parcel)|Assessor'?s?\s*Parcel)[:\s#]*([A-Z0-9][A-Z0-9\-\.]{3,})/i);
+    if (parcelMatch) gathered.parcel_number = parcelMatch[1].trim();
+  }
+
+  // Original agreement date
+  if (!gathered.original_agreement_date) {
+    // Try multiple date patterns
+    const datePatterns = [
+      /(?:dated|executed|entered\s*into\s*(?:a\s*)?(?:Purchase\s*)?(?:Agreement\s*)?(?:dated\s*)?)[:\s]+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/i,
+      /(?:Purchase\s*Agreement\s*dated)\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/i,
+      /(?:dated|executed)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    ];
+    for (const pattern of datePatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        gathered.original_agreement_date = match[1].trim();
+        break;
+      }
+    }
+  }
+
+  // Closing date (for reference — the date being extended)
+  if (!gathered.old_closing_date) {
+    const closingMatch = text.match(/(?:Closing|Close)\s*(?:Date|will\s*occur)[:\s]*.*?(\d{1,2}\/\d{1,2}\/\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/i);
+    if (closingMatch) gathered.old_closing_date = closingMatch[1].trim();
+  }
+
+  // Due diligence / feasibility date
+  if (!gathered.old_dd_date) {
+    const ddMatch = text.match(/(?:Due\s*Diligence|Feasibility)[:\s]*.*?(?:on\s*or\s*before|by)\s*(\d{1,2}\/\d{1,2}\/\d{2,4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/i);
+    if (ddMatch) gathered.old_dd_date = ddMatch[1].trim();
+  }
+
+  // Purchase price (for reference)
+  if (!gathered.original_purchase_price) {
+    const priceMatch = text.match(/(?:Purchase\s*Price|Price)[:\s]*\$?([\d,]+(?:\.\d{2})?)/i);
+    if (priceMatch) gathered.original_purchase_price = "$" + priceMatch[1].trim();
+  }
+
+  // Earnest money (for reference)
+  if (!gathered.original_earnest_money) {
+    const emMatch = text.match(/(?:Earnest\s*Money)[:\s]*\$?([\d,]+(?:\.\d{2})?)/i);
+    if (emMatch) gathered.original_earnest_money = "$" + emMatch[1].trim();
+  }
+}
+
+// =============================================================================
 // STEP 1: GATHER — Pull data from pipeline + project files, identify missing
 // =============================================================================
 
@@ -129,55 +232,79 @@ async function initDraft(dealName, docType, state) {
     console.error(`[ContractDrafter] GHL lookup failed: ${err.message}`);
   }
 
-  // For extensions: search Drive/knowledge base for the original contract
+  // For extensions: find and READ the original signed contract
   if (docType === "extension") {
-    try {
-      // Search knowledge base for original contract details
-      if (rag) {
-        const ragResults = await rag.search(`${dealName} purchase agreement contract`, { deal: dealName }, 3);
+    // Search Drive for the original contract — try multiple search terms
+    const searchTerms = [
+      `${dealName} purchase agreement signed`,
+      `${dealName} purchase agreement`,
+      `${dealName} contract`,
+    ];
+
+    let contractText = null;
+    let contractFile = null;
+
+    for (const term of searchTerms) {
+      if (contractText) break;
+      try {
+        const driveResults = await drive.searchFiles(term);
+        if (driveResults && driveResults.files && driveResults.files.length > 0) {
+          // Prefer files with "signed", "executed", or "fully executed" in the name
+          const sorted = driveResults.files.sort((a, b) => {
+            const aName = (a.name || "").toLowerCase();
+            const bName = (b.name || "").toLowerCase();
+            const aScore = (aName.includes("signed") || aName.includes("executed")) ? 2 :
+                           (aName.includes("purchase") || aName.includes("agreement")) ? 1 : 0;
+            const bScore = (bName.includes("signed") || bName.includes("executed")) ? 2 :
+                           (bName.includes("purchase") || bName.includes("agreement")) ? 1 : 0;
+            return bScore - aScore;
+          });
+
+          // Try to read the best match
+          for (const file of sorted.slice(0, 3)) {
+            try {
+              const fileContent = await drive.readFile(file.id);
+              if (fileContent && !fileContent.error) {
+                contractText = typeof fileContent === "string" ? fileContent :
+                               fileContent.text || fileContent.content || JSON.stringify(fileContent);
+                contractFile = { name: file.name, id: file.id };
+                sources.push("drive-contract");
+                break;
+              }
+            } catch { /* try next file */ }
+          }
+
+          // Store all found files for reference
+          gathered._original_contract_files = sorted.slice(0, 5).map(f => ({
+            name: f.name, id: f.id, modified: f.modifiedTime,
+          }));
+        }
+      } catch (err) {
+        console.error(`[ContractDrafter] Drive search "${term}" failed: ${err.message}`);
+      }
+    }
+
+    // Extract fields from contract text
+    if (contractText) {
+      gathered._contract_source = contractFile;
+      extractContractFields(contractText, gathered);
+    }
+
+    // Also try knowledge base if we're still missing key fields
+    const keyFieldsMissing = !gathered.seller_name || !gathered.property_address || !gathered.parcel_number;
+    if (keyFieldsMissing && rag) {
+      try {
+        const ragResults = await rag.search(`${dealName} purchase agreement seller property`, { deal: dealName }, 3);
         if (ragResults && ragResults.results && ragResults.results.length > 0) {
           for (const result of ragResults.results) {
             const text = result.text || result.content || "";
-            // Extract property address
-            if (!gathered.property_address) {
-              const addrMatch = text.match(/(?:Property\s*(?:Address)?|Located\s*at)[:\s]+([^\n,]+)/i);
-              if (addrMatch) gathered.property_address = addrMatch[1].trim();
-            }
-            // Extract parcel number
-            if (!gathered.parcel_number) {
-              const parcelMatch = text.match(/(?:Parcel|APN|Tax\s*(?:Lot|ID))[:\s#]*([A-Z0-9\-\.]+)/i);
-              if (parcelMatch) gathered.parcel_number = parcelMatch[1].trim();
-            }
-            // Extract seller name
-            if (!gathered.seller_name) {
-              const sellerMatch = text.match(/(?:SELLER|Seller)[:\s]+([^\n]+?)(?:\n|$)/);
-              if (sellerMatch) gathered.seller_name = sellerMatch[1].trim();
-            }
-            // Extract original agreement date
-            if (!gathered.original_agreement_date) {
-              const dateMatch = text.match(/(?:dated|executed|entered\s*into)[:\s]+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-              if (dateMatch) gathered.original_agreement_date = dateMatch[1].trim();
-            }
+            extractContractFields(text, gathered);
           }
           sources.push("knowledge-base");
         }
+      } catch (err) {
+        console.error(`[ContractDrafter] Knowledge base search failed: ${err.message}`);
       }
-    } catch (err) {
-      console.error(`[ContractDrafter] Knowledge base search failed: ${err.message}`);
-    }
-
-    // Search Drive for original contract file
-    try {
-      const driveResults = await drive.searchFiles(`${dealName} purchase agreement`);
-      if (driveResults && driveResults.files && driveResults.files.length > 0) {
-        sources.push("drive-search");
-        // Store file IDs for reference
-        gathered._original_contract_files = driveResults.files.slice(0, 3).map(f => ({
-          name: f.name, id: f.id, modified: f.modifiedTime,
-        }));
-      }
-    } catch (err) {
-      console.error(`[ContractDrafter] Drive search failed: ${err.message}`);
     }
   }
 
