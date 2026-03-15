@@ -101,6 +101,24 @@ router.get("/auth/verify", (req, res) => {
   res.redirect(dashboardUrl || "/");
 });
 
+// Direct login (temporary, for initial setup before HTTPS)
+router.get("/auth/direct", (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== (process.env.DASHBOARD_SECRET || "change-me-in-production")) {
+    return res.status(403).send("Forbidden");
+  }
+  const sessionToken = jwt.sign({ userId: OWNER_USER_ID }, JWT_SECRET(), {
+    expiresIn: `${SESSION_DAYS}d`,
+  });
+  res.cookie(COOKIE_NAME, sessionToken, {
+    httpOnly: true,
+    secure: false,
+    sameSite: "lax",
+    maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
+  });
+  res.redirect("/");
+});
+
 // Check auth status
 router.get("/auth/status", (req, res) => {
   const token = req.cookies?.[COOKIE_NAME];
