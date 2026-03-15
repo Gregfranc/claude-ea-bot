@@ -1552,12 +1552,9 @@ function getNextSubscriptionScanTime() {
   const now = new Date();
   const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
   const currentHour = cst.getHours();
-  const currentMin = cst.getMinutes();
 
-  let daysToAdd = 0;
-  if (currentHour > SUBSCRIPTION_SCAN_HOUR || (currentHour === SUBSCRIPTION_SCAN_HOUR && currentMin >= 5)) {
-    daysToAdd = 1;
-  }
+  // If we're at or past the scan hour, schedule for tomorrow
+  let daysToAdd = currentHour >= SUBSCRIPTION_SCAN_HOUR ? 1 : 0;
 
   const target = new Date(cst);
   target.setDate(target.getDate() + daysToAdd);
