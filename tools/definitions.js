@@ -681,6 +681,29 @@ const OWNER_TOOLS = [
       required: [],
     },
   },
+  // --- Briefing ---
+  {
+    name: "run_briefing",
+    description: "Trigger an on-demand daily briefing. Sends a consolidated report (inbox stats, deal activity, subscriptions, meeting notes) as a DM. Use when Greg asks for a briefing, status update, or daily report.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+  // --- Mission Control ---
+  {
+    name: "mission_control",
+    description: "Check Mission Control unified inbox: unread counts, recent messages across all channels (email, Slack, SMS, calls, CRM). Use when Greg asks about inbox, what needs attention, or unread messages.",
+    input_schema: {
+      type: "object",
+      properties: {
+        channel: { type: "string", enum: ["all", "email", "slack", "gchat", "sms", "call", "crm"], description: "Filter by channel (default: all)" },
+        starred_only: { type: "boolean", description: "Only show starred/action items (default: false)" },
+      },
+      required: [],
+    },
+  },
   // Web search: server-side tool, executed by Anthropic. No client handling needed.
   {
     type: "web_search_20250305",

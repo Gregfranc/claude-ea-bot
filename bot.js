@@ -4,6 +4,8 @@ const Anthropic = require("@anthropic-ai/sdk");
 const OpenAI = require("openai");
 const https = require("https");
 const http = require("http");
+const express = require("express");
+const cookieParser = require("cookie-parser");
 const gmail = require("./tools/gmail");
 const calendar = require("./tools/calendar");
 const files = require("./tools/files");
@@ -25,6 +27,10 @@ const contractDrafter = require("./tools/subagents/contract-drafter");
 const ghl = require("./tools/ghl");
 const quo = require("./tools/quo");
 const subscriptions = require("./tools/subscriptions");
+const mc = require("./tools/mission-control");
+const pubsub = require("./tools/pubsub");
+const slackConnector = require("./connectors/slack");
+const dashboardApi = require("./dashboard/api");
 let rag;
 try {
   rag = require("./tools/rag");
@@ -210,7 +216,7 @@ Knowledge base: ALWAYS try search_knowledge_base FIRST when Greg asks about docu
 Web search: You have web_search available for real-time research, market data, company lookups, news, and anything not in Greg's files. Use it when the question needs current information from the internet. Multiple searches per response are fine.
 
 SCHEDULED SYSTEMS (running 24/7 on VPS):
-Daily Briefings (7am, 12pm, 5pm CST): Consolidated report with inbox triage stats (starred, fyi, noise, newsletters + details), deal activity digest, upcoming subscription renewals, and pending meeting notes. All three are full reports. Greg is actively monitoring these to refine accuracy before trimming down.
+Daily Briefings (7am, 12pm, 5pm CST): Consolidated report with inbox triage stats (starred, fyi, noise, newsletters + details), deal activity digest, upcoming subscription renewals, and pending meeting notes. All three are full reports. Greg is actively monitoring these to refine accuracy before trimming down. Greg can also ask for a briefing anytime and you should call run_briefing.
 Background systems (no DMs unless notable):
 - Email Triage: every 15 min (5am-11pm CST), 60 min overnight. Classifies inbox, applies labels, DMs on starred/actionable.
 - Email Tasks: every triage cycle. Processes emails to greg+task@gfdevllc.com.
@@ -432,6 +438,9 @@ async function executeTool(toolName, toolInput, userId) {
       return await rag.getStats();
     case "rag_reindex":
       return await rag.fullReindex((msg) => console.log(`[RAG] ${msg}`));
+    case "run_briefing":
+      runDailyBriefing(null).catch((err) => console.error("[Briefing] On-demand error:", err.message));
+      return { status: "Briefing is being generated and will be sent as a DM in a few seconds." };
     // --- Team tools ---
     case "team_search_drive":
       return await driveTeam.teamSearchDrive(
@@ -455,6 +464,25 @@ async function executeTool(toolName, toolInput, userId) {
         toolInput.start_date,
         toolInput.end_date
       );
+    // --- Mission Control ---
+    case "mission_control": {
+      const stats = mc.getStats();
+      const feed = mc.getFeed({ channel: toolInput.channel || "all", starred: toolInput.starred_only, limit: 20 });
+      const dashboardUrl = process.env.DASHBOARD_URL || "http://localhost:3001";
+      let summary = `Mission Control: ${stats.unread} unread, ${stats.starred} starred\n`;
+      summary += `By channel: Email ${stats.byChannel.email}, Slack ${stats.byChannel.slack}, GChat ${stats.byChannel.gchat}, SMS ${stats.byChannel.sms}, Calls ${stats.byChannel.call}, CRM ${stats.byChannel.crm}\n`;
+      summary += `Last sync: ${stats.lastSync || "never"}\n`;
+      summary += `Dashboard: ${dashboardUrl}\n\n`;
+      if (feed.items.length > 0) {
+        summary += "Recent items:\n";
+        for (const item of feed.items.slice(0, 10)) {
+          const star = item.starred ? "*" : " ";
+          const read = item.read ? " " : "NEW";
+          summary += `[${star}] [${read}] [${item.channel}] ${item.from} — ${item.subject || item.preview.substring(0, 60)} (${item.timestamp})\n`;
+        }
+      }
+      return summary;
+    }
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -1050,6 +1078,16 @@ async function runAutoTriage() {
     console.error("[Auto-Triage] Error:", err.message);
   }
 
+  // --- Post-Triage: Mission Control feed aggregation ---
+  try {
+    const mcResult = await mc.aggregateFeed();
+    if (mcResult.new > 0) {
+      console.log(`[MissionControl] Feed aggregation: ${mcResult.new} new items across channels.`);
+    }
+  } catch (err) {
+    console.error("[MissionControl] Feed aggregation error:", err.message);
+  }
+
   // --- Post-Triage: Detect meeting notes -> inbox sheet (silent) ---
   try {
     const emailReports = await meetingNotes.checkRecentMeetingEmails();
@@ -1622,6 +1660,82 @@ async function runQuoPoll() {
   }
 }
 
+// --- Mission Control: Express Dashboard Server ---
+const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT) || 3001;
+
+function startDashboardServer() {
+  const dashApp = express();
+  dashApp.use(express.json());
+  dashApp.use(cookieParser());
+
+  // Make Slack app available to API routes (for magic link DMs)
+  dashApp.set("slackApp", app);
+
+  // API routes
+  dashApp.use("/api", dashboardApi);
+
+  // Serve static dashboard files
+  dashApp.use(express.static(path.join(__dirname, "dashboard")));
+
+  // SPA fallback: serve index.html for any non-API, non-file route
+  dashApp.get("*", (req, res) => {
+    if (!req.path.startsWith("/api/")) {
+      res.sendFile(path.join(__dirname, "dashboard", "index.html"));
+    }
+  });
+
+  dashApp.listen(DASHBOARD_PORT, () => {
+    console.log(`[Dashboard] Mission Control running on port ${DASHBOARD_PORT}`);
+  });
+}
+
+// --- Mission Control: Morning Briefing Scheduler (6am CST) ---
+const MC_BRIEFING_HOUR = 6; // 6am CST
+let mcBriefingTimer = null;
+
+function getNextMCBriefingTime() {
+  const now = new Date();
+  const cst = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const currentHour = cst.getHours();
+  const currentMin = cst.getMinutes();
+
+  let daysToAdd = 0;
+  if (currentHour > MC_BRIEFING_HOUR || (currentHour === MC_BRIEFING_HOUR && currentMin >= 5)) {
+    daysToAdd = 1;
+  }
+
+  const target = new Date(cst);
+  target.setDate(target.getDate() + daysToAdd);
+  target.setHours(MC_BRIEFING_HOUR, 0, 0, 0);
+  return target.getTime() - cst.getTime();
+}
+
+function scheduleNextMCBriefing() {
+  if (mcBriefingTimer) clearTimeout(mcBriefingTimer);
+  const msUntil = getNextMCBriefingTime();
+  mcBriefingTimer = setTimeout(async () => {
+    await runMCBriefing();
+    scheduleNextMCBriefing();
+  }, msUntil);
+  const hoursUntil = (msUntil / 3600000).toFixed(1);
+  console.log(`[MC Briefing] Next morning briefing at ${MC_BRIEFING_HOUR}:00 CST (in ${hoursUntil} hours).`);
+}
+
+async function runMCBriefing() {
+  try {
+    console.log("[MC Briefing] Generating morning briefing...");
+    const briefing = await mc.getMorningBriefing();
+    const dmChannel = await app.client.conversations.open({ users: OWNER_USER_ID });
+    await app.client.chat.postMessage({
+      channel: dmChannel.channel.id,
+      text: briefing,
+    });
+    console.log("[MC Briefing] Morning briefing sent.");
+  } catch (err) {
+    console.error("[MC Briefing] Error:", err.message);
+  }
+}
+
 // --- Start ---
 (async () => {
   await app.start();
@@ -1643,11 +1757,57 @@ async function runQuoPoll() {
   }
   console.log("Public users: chat only (no tool access)");
 
+  // --- Mission Control: Initialize ---
+  slackConnector.init(app);
+  mc.init();
+  startDashboardServer();
+  console.log("[MissionControl] Initialized with all channel connectors.");
+
+  // Initialize PubSub for Gmail real-time push (if configured)
+  try {
+    await pubsub.init();
+  } catch (err) {
+    console.error("[PubSub] Init error (non-fatal):", err.message);
+  }
+
+  // Hook Slack message events into Mission Control real-time feed
+  app.event("message", async ({ event }) => {
+    // Only process DM and channel messages (not bot messages or subtypes)
+    if (event.subtype && event.subtype !== "file_share") return;
+    if (event.bot_id) return;
+    try {
+      const slackConn = mc.connectors.find(c => c.name === "slack");
+      if (slackConn && slackConn.handleEvent) {
+        const item = await slackConn.handleEvent(event);
+        if (item) {
+          await mc.handleRealtimeMessage({ handlePush: async () => item }, null);
+        }
+      }
+    } catch (err) {
+      // Non-fatal: don't break message handling
+      console.error("[MC Slack Hook] Error:", err.message);
+    }
+  });
+
+  // Schedule Mission Control morning briefing at 6am CST
+  scheduleNextMCBriefing();
+
   // Run initial triage on startup
   setTimeout(async () => {
     console.log("[Auto-Triage] Running initial triage...");
     await runAutoTriage();
   }, 5000);
+
+  // Run initial Mission Control feed aggregation (after triage, 30s)
+  setTimeout(async () => {
+    console.log("[MissionControl] Running initial feed aggregation...");
+    try {
+      const result = await mc.aggregateFeed();
+      console.log(`[MissionControl] Initial aggregation: ${result.new} new items, ${result.total} total cached.`);
+    } catch (err) {
+      console.error("[MissionControl] Initial aggregation error:", err.message);
+    }
+  }, 30000);
 
   // Schedule adaptive triage (15 min daytime, 60 min nighttime CST)
   scheduleNextTriage();
