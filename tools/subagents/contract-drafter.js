@@ -324,48 +324,64 @@ async function initDraft(dealName, docType, state) {
 
   // Determine missing fields (required only)
   const missing = requiredFields.filter((f) => !gathered[f]);
-  // Track which optional fields are available vs not
-  const missingOptional = optionalFields.filter((f) => !gathered[f]);
 
-  // For extensions: build a human-readable summary for the bot
-  let summary = null;
+  // For extensions: return a PLAIN TEXT response the bot will relay directly
+  // Do NOT return raw field arrays — the bot just dumps them
   if (docType === "extension") {
-    const found = [];
-    const needFromGreg = [];
+    const lines = [];
+    lines.push(`EXTENSION AGREEMENT DATA GATHERED (${state || "WA"} template ready)`);
+    lines.push("");
 
-    // Describe what we found
-    if (gathered.seller_name) found.push(`Seller: ${gathered.seller_name}`);
-    if (gathered.property_address) {
-      let addr = gathered.property_address;
-      if (gathered.property_city) addr += `, ${gathered.property_city}`;
-      if (gathered.property_state) addr += `, ${gathered.property_state}`;
-      found.push(`Property: ${addr}`);
+    // What we found
+    const foundAny = gathered.seller_name || gathered.property_address || gathered.parcel_number;
+    if (foundAny) {
+      lines.push("FROM THE ORIGINAL CONTRACT:");
+      if (gathered.seller_name) lines.push(`  Seller: ${gathered.seller_name}`);
+      if (gathered.seller_mailing_address) {
+        let addr = gathered.seller_mailing_address;
+        if (gathered.seller_mailing_city) addr += `, ${gathered.seller_mailing_city}`;
+        if (gathered.seller_mailing_state) addr += `, ${gathered.seller_mailing_state}`;
+        if (gathered.seller_mailing_zip) addr += ` ${gathered.seller_mailing_zip}`;
+        lines.push(`  Seller address: ${addr}`);
+      }
+      if (gathered.property_address) {
+        let addr = gathered.property_address;
+        if (gathered.property_city) addr += `, ${gathered.property_city}`;
+        if (gathered.property_state) addr += `, ${gathered.property_state}`;
+        if (gathered.property_zip) addr += ` ${gathered.property_zip}`;
+        lines.push(`  Property: ${addr}`);
+      }
+      if (gathered.parcel_number) lines.push(`  Parcel: ${gathered.parcel_number}`);
+      if (gathered.original_agreement_date) lines.push(`  Original agreement date: ${gathered.original_agreement_date}`);
+      if (gathered.old_closing_date) lines.push(`  Current closing date: ${gathered.old_closing_date}`);
+      if (gathered.old_dd_date) lines.push(`  Current DD date: ${gathered.old_dd_date}`);
+      if (gathered.original_purchase_price) lines.push(`  Purchase price: ${gathered.original_purchase_price}`);
+      if (gathered._contract_source) lines.push(`  Source file: ${gathered._contract_source.name}`);
+      lines.push("");
+    } else {
+      lines.push("Could not find the original signed contract on Drive. I'll need the basic deal info from Greg.");
+      lines.push("");
     }
-    if (gathered.parcel_number) found.push(`Parcel: ${gathered.parcel_number}`);
-    if (gathered.original_agreement_date) found.push(`Original agreement date: ${gathered.original_agreement_date}`);
-    if (gathered.old_closing_date) found.push(`Current closing date: ${gathered.old_closing_date}`);
-    if (gathered.old_dd_date) found.push(`Current DD date: ${gathered.old_dd_date}`);
-    if (gathered.original_purchase_price) found.push(`Purchase price: ${gathered.original_purchase_price}`);
-    if (gathered._contract_source) found.push(`Source: ${gathered._contract_source.name} (Drive)`);
 
-    // What we still need — only the essentials
-    if (!gathered.seller_name) needFromGreg.push("seller name and mailing address");
-    if (!gathered.property_address) needFromGreg.push("property address");
-    if (!gathered.parcel_number) needFromGreg.push("parcel number");
-    if (!gathered.original_agreement_date) needFromGreg.push("original agreement date");
+    // What we still need — conversational instructions for the bot
+    lines.push("ASK GREG (conversationally, not as a bullet list):");
+    if (!gathered.seller_name) lines.push("- Seller name and mailing address (could not find the original contract)");
+    if (!gathered.property_address) lines.push("- Property address, city, state, zip");
+    if (!gathered.parcel_number) lines.push("- Parcel number");
+    if (!gathered.original_agreement_date) lines.push("- Original agreement date");
+    lines.push("- What date should the closing be extended to?");
+    lines.push("- Is the due diligence period also being extended? If so, to what date?");
+    lines.push("- Any additional earnest money for this extension?");
+    lines.push("- Any price changes or other term modifications?");
+    lines.push("- Any additional sellers who need to sign?");
+    lines.push("");
+    lines.push("INSTRUCTIONS: Present what you found first, then ask ONLY the questions above. Be conversational and brief. Do NOT list template field names. When Greg provides answers, call draft_contract with step='generate' and pass all fields.");
 
-    // Extension-specific questions (always ask these)
-    needFromGreg.push("new closing date (what date to extend to)");
-    needFromGreg.push("is the due diligence period also being extended? If so, to what date?");
-    needFromGreg.push("any additional earnest money for the extension?");
-    needFromGreg.push("any price change or other term modifications?");
-    needFromGreg.push("any additional sellers who need to sign besides the primary?");
+    // Store gathered data for the generate step (bot passes it back as fields)
+    lines.push("");
+    lines.push("GATHERED_DATA_JSON:" + JSON.stringify(gathered));
 
-    summary = {
-      found: found.length > 0 ? found : ["No contract data found in Drive or knowledge base"],
-      needFromGreg,
-      instruction: "Present what was found conversationally. Only ask what's listed in needFromGreg. Do NOT list template fields. Be brief and natural.",
-    };
+    return lines.join("\n");
   }
 
   return {
@@ -373,11 +389,9 @@ async function initDraft(dealName, docType, state) {
     templatePath: template.path,
     gathered,
     missing,
-    missingOptional,
     requiredFields,
     optionalFields,
     sources,
-    summary,
     state: state || (gathered.state_abbrev ? gathered.state_abbrev.toLowerCase() : null),
   };
 }
