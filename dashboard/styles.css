@@ -75,3 +75,12 @@ body {
   border-top: 1px solid #334155;
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Hide scrollbar for channel chips */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Tailwind custom colors as CSS vars for Preact */
+.bg-surface { background-color: #0f172a; }
+.bg-surface-light { background-color: #1e293b; }
+.bg-surface-lighter { background-color: #334155; }

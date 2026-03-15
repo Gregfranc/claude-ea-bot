@@ -279,8 +279,8 @@ router.get("/stats", authRequired, (req, res) => {
 router.get("/calendar/today", authRequired, async (req, res) => {
   try {
     const calendar = require("../tools/calendar");
-    const events = await calendar.listEvents(1);
-    res.json({ events: events || [] });
+    const result = await calendar.listEvents(1);
+    res.json({ events: result?.events || [] });
   } catch (err) {
     res.json({ events: [], error: err.message });
   }

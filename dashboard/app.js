@@ -370,6 +370,29 @@ function SearchBar({ value, onChange }) {
 }
 
 // ============================================================
+// CHANNEL FILTER CHIPS (mobile)
+// ============================================================
+function ChannelChips({ channel, setChannel }) {
+  const chips = ['all', 'email', 'slack', 'gchat', 'sms', 'call', 'crm'];
+  return html`
+    <div class="flex items-center gap-1.5 px-2 py-1.5 overflow-x-auto border-b border-gray-700/50 no-scrollbar">
+      ${chips.map(ch => {
+        const cfg = CHANNELS[ch];
+        const active = channel === ch;
+        return html`
+          <button onclick=${() => setChannel(ch)}
+            class="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs whitespace-nowrap flex-shrink-0
+              ${active ? 'bg-blue-600 text-white' : 'bg-surface-light text-gray-400 hover:text-gray-200'}">
+            <span class="text-xs">${cfg.icon}</span>
+            <span>${cfg.label}</span>
+          </button>
+        `;
+      })}
+    </div>
+  `;
+}
+
+// ============================================================
 // SORT CONTROLS
 // ============================================================
 function SortBar({ sort, setSort }) {
@@ -381,6 +404,147 @@ function SortBar({ sort, setSort }) {
           ${s}
         </button>
       `)}
+    </div>
+  `;
+}
+
+// ============================================================
+// CALENDAR VIEW
+// ============================================================
+function CalendarView() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/calendar/today').then(data => {
+      setEvents(data?.events || []);
+      setLoading(false);
+    }).catch(() => {
+      setError('Failed to load calendar');
+      setLoading(false);
+    });
+  }, []);
+
+  function formatTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  if (loading) {
+    return html`
+      <div class="p-4 space-y-3">
+        ${[1,2,3].map(() => html`
+          <div class="flex gap-3">
+            <div class="skeleton h-4 w-16"></div>
+            <div class="skeleton h-4 w-48"></div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  if (error) {
+    return html`<div class="flex items-center justify-center h-full text-gray-500 text-sm">${error}</div>`;
+  }
+
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return html`
+    <div class="overflow-y-auto h-full">
+      <div class="p-4">
+        <h2 class="text-sm font-medium text-gray-400 mb-3">${today}</h2>
+        ${events.length === 0 ? html`
+          <div class="text-gray-500 text-sm py-8 text-center">No events today</div>
+        ` : events.map((evt, i) => {
+          const startStr = typeof evt.start === 'string' ? evt.start : (evt.start?.dateTime || evt.start?.date || '');
+          const endStr = typeof evt.end === 'string' ? evt.end : (evt.end?.dateTime || evt.end?.date || '');
+          const isAllDay = startStr.length <= 10; // date-only: "2026-03-15"
+          const startTime = isAllDay ? 'All day' : formatTime(startStr);
+          const endTime = isAllDay ? '' : formatTime(endStr);
+          const now = new Date();
+          const evtStart = new Date(startStr);
+          const evtEnd = new Date(endStr);
+          const isNow = now >= evtStart && now <= evtEnd;
+          const isPast = now > evtEnd;
+
+          return html`
+            <div key=${i} class="flex gap-3 py-3 border-b border-gray-800/50 ${isPast ? 'opacity-50' : ''}">
+              <div class="w-16 flex-shrink-0 text-right">
+                <div class="text-xs font-medium ${isNow ? 'text-green-400' : 'text-gray-400'}">${startTime}</div>
+                ${endTime ? html`<div class="text-xs text-gray-600">${endTime}</div>` : null}
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm ${isNow ? 'text-white font-medium' : 'text-gray-300'}">
+                  ${isNow ? '● ' : ''}${evt.summary || 'Untitled'}
+                </div>
+                ${evt.location ? html`<div class="text-xs text-gray-500 truncate mt-0.5">${evt.location}</div>` : null}
+                ${evt.description ? html`<div class="text-xs text-gray-600 truncate mt-0.5">${evt.description.substring(0, 100)}</div>` : null}
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// PIPELINE VIEW
+// ============================================================
+function PipelineView() {
+  const [pipeline, setPipeline] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/pipeline').then(data => {
+      setPipeline(data?.summary || null);
+      setLoading(false);
+    }).catch(() => {
+      setError('Failed to load pipeline');
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return html`
+      <div class="p-4 space-y-3">
+        ${[1,2,3,4].map(() => html`
+          <div class="skeleton h-16 w-full rounded-lg"></div>
+        `)}
+      </div>
+    `;
+  }
+
+  if (error) {
+    return html`<div class="flex items-center justify-center h-full text-gray-500 text-sm">${error}</div>`;
+  }
+
+  if (!pipeline) {
+    return html`<div class="flex items-center justify-center h-full text-gray-500 text-sm">Pipeline data not available</div>`;
+  }
+
+  // Pipeline summary is a text string from the API. Render it formatted.
+  const lines = (typeof pipeline === 'string' ? pipeline : JSON.stringify(pipeline, null, 2)).split('\n');
+
+  return html`
+    <div class="overflow-y-auto h-full p-4">
+      <h2 class="text-sm font-medium text-gray-400 mb-3">Deal Pipeline</h2>
+      <div class="bg-surface-light rounded-lg p-4 text-sm text-gray-300 whitespace-pre-wrap font-mono text-xs leading-relaxed">
+        ${lines.map((line, i) => {
+          // Highlight headers and key metrics
+          const isHeader = line.match(/^[A-Z\s]+:?$/) || line.startsWith('##') || line.startsWith('**');
+          return html`<div key=${i} class="${isHeader ? 'text-white font-medium mt-2' : ''}">${line}</div>`;
+        })}
+      </div>
     </div>
   `;
 }
@@ -533,6 +697,8 @@ function App() {
 
   // --- Mobile layout ---
   if (isMobile) {
+    const feedTab = mobileTab === 'feed' || mobileTab === 'starred';
+
     return html`
       <div class="flex flex-col h-screen">
         ${mobileView === 'detail' && selectedItem ? html`
@@ -541,9 +707,28 @@ function App() {
             onBack=${() => setMobileView('feed')}
             onStar=${handleStar}
           />
+        ` : mobileTab === 'calendar' ? html`
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-gray-700/50">
+              <h1 class="text-sm font-medium">Today's Schedule</h1>
+            </div>
+            <div class="flex-1 overflow-hidden">
+              <${CalendarView} />
+            </div>
+          </div>
+        ` : mobileTab === 'pipeline' ? html`
+          <div class="flex-1 flex flex-col overflow-hidden">
+            <div class="p-3 border-b border-gray-700/50">
+              <h1 class="text-sm font-medium">Deal Pipeline</h1>
+            </div>
+            <div class="flex-1 overflow-hidden">
+              <${PipelineView} />
+            </div>
+          </div>
         ` : html`
           <div class="flex-1 flex flex-col overflow-hidden">
             <${SearchBar} value=${search} onChange=${setSearch} />
+            <${ChannelChips} channel=${channel} setChannel=${setChannel} />
             <${SortBar} sort=${sort} setSort=${setSort} />
             <div class="flex-1 overflow-hidden">
               <${MessageFeed}
@@ -560,7 +745,6 @@ function App() {
         <${MobileNav} tab=${mobileTab} setTab=${(t) => {
           setMobileTab(t);
           setMobileView('feed');
-          // Sync starred state: mobile "Starred" tab = starred filter on
           setStarred(t === 'starred');
         }} stats=${stats} />
       </div>
