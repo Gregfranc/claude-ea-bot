@@ -550,6 +550,18 @@ function PipelineView() {
 }
 
 // ============================================================
+// CONNECTION STATUS BAR
+// ============================================================
+function ConnectionBar({ connected }) {
+  if (connected) return null;
+  return html`
+    <div class="bg-yellow-900/50 text-yellow-300 text-xs text-center py-1 px-2">
+      Reconnecting...
+    </div>
+  `;
+}
+
+// ============================================================
 // MAIN APP
 // ============================================================
 function App() {
@@ -565,6 +577,7 @@ function App() {
   const [mobileTab, setMobileTab] = useState('feed');
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
+  const [sseConnected, setSseConnected] = useState(true);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
   // Reactive resize listener
@@ -638,22 +651,30 @@ function App() {
     let es;
     try {
       es = new EventSource('/api/stream', { withCredentials: true });
+      es.addEventListener('connected', () => setSseConnected(true));
       es.addEventListener('new_message', (e) => {
+        setSseConnected(true);
         const item = JSON.parse(e.data);
         setItems(prev => [item, ...prev]);
         fetchStats();
       });
       es.addEventListener('new_items', (e) => {
+        setSseConnected(true);
         const data = JSON.parse(e.data);
         setItems(prev => [...(data.items || []), ...prev]);
         fetchStats();
       });
       es.addEventListener('item_updated', (e) => {
+        setSseConnected(true);
         const update = JSON.parse(e.data);
         setItems(prev => prev.map(i => i.id === update.id ? { ...i, ...update } : i));
         fetchStats();
       });
-      es.onerror = () => { setTimeout(() => fetchFeed(), 5000); };
+      es.addEventListener('ping', () => setSseConnected(true));
+      es.onerror = () => {
+        setSseConnected(false);
+        setTimeout(() => fetchFeed(), 5000);
+      };
     } catch {}
     return () => es?.close();
   }, [auth]);
@@ -695,12 +716,18 @@ function App() {
     channel !== 'all' ? `No ${CHANNELS[channel]?.label || channel} messages` :
     search ? `No results for "${search}"` : 'No messages yet';
 
+  // Manual refresh handler
+  function handleRefresh() {
+    setLoading(true);
+    fetchFeed();
+    fetchStats();
+  }
+
   // --- Mobile layout ---
   if (isMobile) {
-    const feedTab = mobileTab === 'feed' || mobileTab === 'starred';
-
     return html`
       <div class="flex flex-col h-screen">
+        <${ConnectionBar} connected=${sseConnected} />
         ${mobileView === 'detail' && selectedItem ? html`
           <${DetailPane}
             item=${selectedItem}
@@ -709,7 +736,7 @@ function App() {
           />
         ` : mobileTab === 'calendar' ? html`
           <div class="flex-1 flex flex-col overflow-hidden">
-            <div class="p-3 border-b border-gray-700/50">
+            <div class="flex items-center justify-between p-3 border-b border-gray-700/50">
               <h1 class="text-sm font-medium">Today's Schedule</h1>
             </div>
             <div class="flex-1 overflow-hidden">
@@ -718,7 +745,7 @@ function App() {
           </div>
         ` : mobileTab === 'pipeline' ? html`
           <div class="flex-1 flex flex-col overflow-hidden">
-            <div class="p-3 border-b border-gray-700/50">
+            <div class="flex items-center justify-between p-3 border-b border-gray-700/50">
               <h1 class="text-sm font-medium">Deal Pipeline</h1>
             </div>
             <div class="flex-1 overflow-hidden">
@@ -727,7 +754,13 @@ function App() {
           </div>
         ` : html`
           <div class="flex-1 flex flex-col overflow-hidden">
-            <${SearchBar} value=${search} onChange=${setSearch} />
+            <div class="flex items-center gap-2 pr-2">
+              <div class="flex-1"><${SearchBar} value=${search} onChange=${setSearch} /></div>
+              <button onclick=${handleRefresh}
+                class="text-gray-500 hover:text-gray-300 text-sm p-2 ${loading ? 'animate-spin' : ''}">
+                ↻
+              </button>
+            </div>
             <${ChannelChips} channel=${channel} setChannel=${setChannel} />
             <${SortBar} sort=${sort} setSort=${setSort} />
             <div class="flex-1 overflow-hidden">
@@ -753,7 +786,9 @@ function App() {
 
   // --- Desktop layout ---
   return html`
-    <div class="flex h-screen">
+    <div class="flex flex-col h-screen">
+      <${ConnectionBar} connected=${sseConnected} />
+      <div class="flex flex-1 overflow-hidden">
       <${Sidebar}
         channel=${channel}
         setChannel=${setChannel}
@@ -780,6 +815,7 @@ function App() {
         onBack=${() => setSelectedItem(null)}
         onStar=${handleStar}
       />
+      </div>
     </div>
   `;
 }
