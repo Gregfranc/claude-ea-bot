@@ -596,15 +596,15 @@ const OWNER_TOOLS = [
   // --- Contract Drafting (Template-Based) ---
   {
     name: "draft_contract",
-    description: "Draft a contract using templates. IMPORTANT: Before calling this, use deal_brief and search_knowledge_base to find deal data first. Pre-fill as many fields as possible. Two steps: (1) 'gather' pulls deal data from pipeline, CRM, Drive, and knowledge base. (2) 'generate' creates the .docx. For extensions: the gather step searches for the original contract automatically. Only ask Greg for NEW information (new dates, term changes) not stuff you already found. Do NOT dump a list of every field. Ask conversationally.",
+    description: "Draft a contract using templates. Two steps: (1) call with step='gather' first — this automatically searches Drive for the original signed contract, reads it, extracts all deal data, and returns a plain-text summary of what was found and what to ask Greg. (2) call with step='generate' and pass all fields to create the .docx. CRITICAL: After step='gather', relay the tool result to Greg as-is. The gather result tells you exactly what to say. Do NOT make up your own field list. Do NOT add fields not in the result.",
     input_schema: {
       type: "object",
       properties: {
-        deal_name: { type: "string", description: "Deal name (e.g. 'Cumley', 'Traditions North', 'Innes')" },
+        deal_name: { type: "string", description: "Deal name" },
         doc_type: { type: "string", enum: ["offer", "extension", "cancellation", "purchase-agreement", "amendment", "assignment", "lot-sale", "option", "earnest-money"], description: "Type of document" },
         state: { type: "string", enum: ["WA", "OR", "CA", "ID", "NV"], description: "State for template selection" },
-        step: { type: "string", enum: ["gather", "generate"], description: "'gather' to check data, 'generate' to create doc. Default: gather." },
-        fields: { type: "object", description: "Merge field values for generate step (seller_name, purchase_price, parcel_number, etc.)" },
+        step: { type: "string", enum: ["gather", "generate"], description: "'gather' to check data, 'generate' to create doc. Always call gather first." },
+        fields: { type: "object", description: "All field values for generate step — pass back everything from gather plus Greg's answers" },
         include_cover_letter: { type: "boolean", description: "Include cover letter page (default true)" },
         include_about_me: { type: "boolean", description: "Include about me page (default true)" },
         custom_terms: { type: "string", description: "Special terms or conditions to add" },

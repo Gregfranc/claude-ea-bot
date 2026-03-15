@@ -45,5 +45,12 @@ if [ -f "data/triage-profile.json" ]; then
   "
 fi
 
+# Also pull the EA project repo (templates, context files)
+if [ -d /opt/claude-ea-project ]; then
+  echo "Pulling EA project repo..."
+  cd /opt/claude-ea-project && git pull origin main 2>&1 || echo "EA project pull failed (non-fatal)"
+  cd /opt/claude-ea
+fi
+
 pm2 restart claude-ea
 echo "Deploy complete at $(date)"

@@ -21,6 +21,23 @@ function verifySignature(payload, signature) {
 }
 
 const server = http.createServer((req, res) => {
+  // Health/status endpoint — verify deploy is current
+  if (req.method === "GET" && req.url === "/status") {
+    const { execSync } = require("child_process");
+    try {
+      const commit = execSync("git -C /opt/claude-ea rev-parse --short HEAD", { timeout: 5000 }).toString().trim();
+      const date = execSync("git -C /opt/claude-ea log -1 --format=%ci", { timeout: 5000 }).toString().trim();
+      const msg = execSync("git -C /opt/claude-ea log -1 --format=%s", { timeout: 5000 }).toString().trim();
+      const uptime = process.uptime();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ commit, date, message: msg, webhook_uptime_sec: Math.floor(uptime) }));
+    } catch (err) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   if (req.method !== "POST" || req.url !== "/deploy") {
     res.writeHead(404);
     res.end("Not found");

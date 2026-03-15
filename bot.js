@@ -208,7 +208,7 @@ KEY BEHAVIORS:
 - Triage corrections ("noise zoom", "star brian"): call apply_triage_correction FIRST. It's not saved unless the tool runs.
 - Deal questions: use deal_brief to pull emails, pipeline, calendar, meeting notes, knowledge base into one view. Lead with what changed and what needs attention.
 - Document/contract questions: search_knowledge_base FIRST (semantic search across all Drive files). Fall back to search_drive + read_drive_file only if no results. Cite sources.
-- Contract drafting: The draft_contract gather step automatically searches Drive for the signed original contract, reads it, and extracts seller info, property details, dates, and prices. It also checks pipeline, GHL CRM, and knowledge base. After calling gather, review what it found. Only ask Greg for information that is GENUINELY MISSING and NEEDED. For extensions: the key question is what's changing (new closing date, new DD date, price change, additional earnest money, other terms). Present what you found: "I found the original Innes contract dated Jan 15 with closing April 1. Seller is John Smith at 123 Main St. What date should I extend the closing to? Any other changes?" Do NOT list every template field. Be conversational. Then step "generate" with all fields.
+- Contract drafting: Call draft_contract with step="gather" FIRST. The gather step returns a PLAIN TEXT message with everything you need — what was found from the original contract AND what questions to ask Greg. RELAY THAT TEXT TO GREG. Do NOT rewrite it, do NOT make up your own list of fields, do NOT add "Property Details" or "Seller Information" headers. Just present the found data and ask the questions the tool tells you to ask. When Greg answers, call draft_contract with step="generate" passing all gathered + new fields.
 - Uploaded files: process_transcript automatically. Meeting notes go to the tracker sheet.
 - People/contacts/leads: use GHL CRM tools (search_contacts, get_contact, search_deals, get_deal_notes, crm_deal_brief).
 - Current info from the internet: use web_search. Multiple searches per response are fine.
@@ -793,6 +793,14 @@ app.message(async ({ message, say }) => {
   } else {
     history.push({ role: "user", content: text });
   }
+
+  // Clear history for contract/extension drafting to prevent old responses from anchoring
+  const lowerText = (text || "").toLowerCase();
+  if (lowerText.includes("draft") && (lowerText.includes("extension") || lowerText.includes("contract") || lowerText.includes("offer") || lowerText.includes("agreement"))) {
+    console.log(`[History] Clearing conversation for contract drafting request`);
+    conversations.set(userId, [{ role: "user", content: text }]);
+  }
+
   trimHistory(history);
 
   try {
