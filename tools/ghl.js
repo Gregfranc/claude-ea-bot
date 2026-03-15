@@ -42,14 +42,9 @@ async function ghlFetch(endpoint, options = {}) {
 
 async function searchContacts(query, limit = 10) {
   const locationId = process.env.GHL_LOCATION_ID;
-  const data = await ghlFetch(`/contacts/search`, {
-    method: "POST",
-    body: {
-      locationId,
-      query,
-      limit,
-    },
-  });
+  const data = await ghlFetch(
+    `/contacts/?locationId=${locationId}&query=${encodeURIComponent(query)}&limit=${limit}`
+  );
   return (data.contacts || []).map(formatContact);
 }
 
