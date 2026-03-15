@@ -6,6 +6,16 @@ const https = require("https");
 const http = require("http");
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const { execSync } = require("child_process");
+
+// Build version — set at startup, used for deploy verification
+let BUILD_VERSION;
+try {
+  BUILD_VERSION = execSync("git rev-parse --short HEAD", { timeout: 3000 }).toString().trim();
+} catch { BUILD_VERSION = "unknown"; }
+const BUILD_TIME = new Date().toISOString();
+console.log(`[Bot] Starting build ${BUILD_VERSION} at ${BUILD_TIME}`);
+
 const gmail = require("./tools/gmail");
 const calendar = require("./tools/calendar");
 const files = require("./tools/files");
@@ -662,6 +672,13 @@ app.message(async ({ message, say }) => {
 
   const userId = message.user;
   let text = message.text || "";
+
+  // Quick version check (no Claude API call needed)
+  if (/^(version|deploy status|build)$/i.test(text.trim())) {
+    const uptime = Math.floor(process.uptime() / 60);
+    await say(`Build: ${BUILD_VERSION}\nStarted: ${BUILD_TIME}\nUptime: ${uptime} min`);
+    return;
+  }
 
   // Debug: log all files attached to this message
   if (message.files && message.files.length > 0) {
